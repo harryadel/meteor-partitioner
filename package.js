@@ -6,19 +6,17 @@ Package.describe({
 });
 
 Package.onUse(function (api) {
-  api.versionsFrom(["1.12.1", '2.3.6']);
+  api.versionsFrom(['3.0']);
 
   // Client & Server deps
   api.use([
     'accounts-base',
-    'underscore',
-    'coffeescript@1.12.7_3 || 2.4.1',
     'check',
     'ddp', // Meteor.publish available
     'mongo' // Mongo.Collection available
   ]);
 
-  api.use("matb33:collection-hooks@1.0.1");
+  api.use("matb33:collection-hooks@2.1.0-beta.4");
 
   api.addFiles('common.js');
 
@@ -40,8 +38,6 @@ Package.onTest(function (api) {
   api.use([
     'accounts-base',
     'accounts-password', // For createUser
-    'coffeescript@1.12.7_3 || 2.4.1',
-    'underscore',
     'ddp', // Meteor.publish available
     'mongo', // Mongo.Collection available
     'tracker' // Deps/Tracker available
