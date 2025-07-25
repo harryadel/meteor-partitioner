@@ -1,9 +1,9 @@
-const ErrMsg = {
+ErrMsg = {
   userIdErr: "Must be logged in to operate on partitioned collection",
   groupErr: "Must have group assigned to operate on partitioned collection"
 };
 
-const Helpers = {
+Helpers = {
   isDirectSelector: function(selector) {
     return typeof selector === 'string' || typeof (selector != null ? selector._id : undefined) === 'string';
   },
