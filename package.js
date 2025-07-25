@@ -20,10 +20,10 @@ Package.onUse(function (api) {
 
   api.use("matb33:collection-hooks@1.0.1");
 
-  api.addFiles('common.coffee');
+  api.addFiles('common.js');
 
-  api.addFiles('grouping.coffee', 'server');
-  api.addFiles('grouping_client.coffee', 'client');
+  api.addFiles('grouping.js', 'server');
+  api.addFiles('grouping_client.js', 'client');
 
   api.export(['Partitioner', 'Grouping']);
 
@@ -54,7 +54,7 @@ Package.onTest(function (api) {
 
   api.addFiles("tests/insecure_login.js");
 
-  api.addFiles('tests/hook_tests.coffee');
-  api.addFiles('tests/grouping_index_tests.coffee', 'server');
-  api.addFiles('tests/grouping_tests.coffee');
+  api.addFiles('tests/hook_tests.js');
+  api.addFiles('tests/grouping_index_tests.js', 'server');
+  api.addFiles('tests/grouping_tests.js');
 });
