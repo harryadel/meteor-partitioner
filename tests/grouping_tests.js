@@ -230,7 +230,7 @@ if (Meteor.isClient) {
         test.equal(res.length, 2);
 
         // Method finds should also not return _groupId
-        _.each(res, (el) => {
+        res.forEach((el) => {
           test.isFalse(el._groupId != null);
         });
       }));
@@ -261,7 +261,7 @@ if (Meteor.isClient) {
         test.isFalse(err);
         test.equal(res.length, 3);
 
-        _.each(res, (el) => {
+        res.forEach((el) => {
           test.isFalse(el._groupId != null);
         });
       }));
@@ -286,7 +286,7 @@ if (Meteor.isClient) {
     (test, expect) => { // Make sure that the other group's record didn't get updated
       Meteor.call("getCollection", "twoGroup", expect((err, res) => {
         test.isFalse(err);
-        _.each(res, (doc) => {
+        res.forEach((doc) => {
           if (doc.a === 1 && doc._groupId === myGroup) {
             test.equal(doc.b, 1);
           } else {

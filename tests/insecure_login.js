@@ -10,9 +10,9 @@ InsecureLogin = {
     this.unwind();
   },
   unwind: function () {
-    _.each(this.queue, function (callback) {
-      callback();
-    });
+          this.queue.forEach(function (callback) {
+        callback();
+      });
     this.queue = [];
   }
 };

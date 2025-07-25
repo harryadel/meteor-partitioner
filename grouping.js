@@ -73,15 +73,15 @@ Partitioner.directOperation = function(func) {
 };
 
 // This can be replaced - currently not documented
-Partitioner._isAdmin = function(userId) {
-  const user = Meteor.users.findOne(userId, {fields: {groupId: 1, admin: 1}});
+Partitioner._isAdmin = async function(userId) {
+  const user = await Meteor.users.findOneAsync(userId, {fields: {groupId: 1, admin: 1}});
   return user.admin === true;
 };
 
 const getPartitionedIndex = function(index) {
   const defaultIndex = {_groupId: 1};
   if (!index) return defaultIndex;
-  return _.extend(defaultIndex, index);
+  return Object.assign(defaultIndex, index);
 };
 
 Partitioner.partitionCollection = function(collection, options) {
@@ -157,7 +157,7 @@ const userFindHook = function(userId, selector, options) {
   if (!this.args[0]) {
     this.args[0] = filter;
   } else {
-    _.extend(selector, filter);
+    Object.assign(selector, filter);
   }
 
   return true;
@@ -202,7 +202,7 @@ const findHook = function(userId, selector, options) {
     } else {
       // If options already exist, add {_groupId: 0} unless fields has {foo: 1} somewhere
       if (options.fields == null) options.fields = {};
-      if (!_.any(options.fields, (v) => v === 1)) {
+      if (!Object.values(options.fields).some((v) => v === 1)) {
         options.fields._groupId = 0;
       }
     }

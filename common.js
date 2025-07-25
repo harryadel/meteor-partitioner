@@ -5,15 +5,15 @@ const ErrMsg = {
 
 const Helpers = {
   isDirectSelector: function(selector) {
-    return _.isString(selector) || _.isString(selector != null ? selector._id : undefined);
+    return typeof selector === 'string' || typeof (selector != null ? selector._id : undefined) === 'string';
   },
 
   // Because of https://github.com/HarvardEconCS/turkserver-meteor/issues/44
   // _id: { $in: [ ... ] } queries should be short-circuited as well for users
   isDirectUserSelector: function(selector) {
-    return _.isString(selector) ||
-      _.isString(selector != null ? selector._id : undefined) ||
-      _.isString(selector != null ? selector.username : undefined) ||
-      (_.isObject(selector != null ? selector._id : undefined) && (selector._id.$in != null));
+    return typeof selector === 'string' ||
+      typeof (selector != null ? selector._id : undefined) === 'string' ||
+      typeof (selector != null ? selector.username : undefined) === 'string' ||
+      (typeof (selector != null ? selector._id : undefined) === 'object' && (selector != null ? selector._id : undefined) !== null && (selector._id.$in != null));
   }
 }; 
