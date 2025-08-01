@@ -8,6 +8,7 @@ const twoGroupCollection = new Mongo.Collection("twoGroup");
 /*
   Set up server and client hooks
 */
+let hookCollection;
 
 if (Meteor.isServer) {
   const groupingCollections = {};
@@ -15,9 +16,8 @@ if (Meteor.isServer) {
   groupingCollections.basicInsert = basicInsertCollection;
   groupingCollections.twoGroup = twoGroupCollection;
 
-  const hookCollection = (collection) => {
+  hookCollection = (collection) => {
     collection._insecure = true;
-
     // Attach the hooks to the collection
     Partitioner.partitionCollection(collection);
   };
@@ -30,7 +30,7 @@ if (Meteor.isClient) {
 /*
   Hook collections and run tests
 */
-
+console.log("BASIC INSERT COLLECTION: ", basicInsertCollection);
 hookCollection(basicInsertCollection);
 hookCollection(twoGroupCollection);
 
@@ -42,25 +42,25 @@ if (Meteor.isServer) {
   // be delayed by a wait method and the subscribe messages would be sent before
   // it and fail due to the collection not yet existing. So we are very hacky
   // and use a publish.
-  Meteor.publish("groupingTests", function() {
+  Meteor.publish("groupingTests", async function() {
     if (!this.userId) return;
 
-    Partitioner.directOperation(() => {
-      basicInsertCollection.remove({});
-      twoGroupCollection.remove({});
+    Partitioner.directOperation(async () => {
+      await basicInsertCollection.removeAsync({});
+      await twoGroupCollection.removeAsync({});
     });
 
     const cursors = [basicInsertCollection.find(), twoGroupCollection.find()];
 
     Meteor._debug("grouping publication activated");
 
-    Partitioner.directOperation(() => {
-      twoGroupCollection.insert({
+    Partitioner.directOperation(async () => {
+      await twoGroupCollection.insertAsync({
         _groupId: myGroup,
         a: 1
       });
 
-      twoGroupCollection.insert({
+      await twoGroupCollection.insertAsync({
         _groupId: otherGroup,
         a: 1
       });
@@ -72,32 +72,32 @@ if (Meteor.isServer) {
   });
 
   Meteor.methods({
-    joinGroup: function(myGroup) {
+    joinGroup: async function(myGroup) {
       const userId = Meteor.userId();
       if (!userId) throw new Error(403, "Not logged in");
-      Partitioner.clearUserGroup(userId);
+      await Partitioner.clearUserGroup(userId);
       Partitioner.setUserGroup(userId, myGroup);
     },
-    serverInsert: function(name, doc) {
-      return groupingCollections[name].insert(doc);
+    serverInsert: async function(name, doc) {
+      return groupingCollections[name].insertAsync(doc);
     },
-    serverUpdate: function(name, selector, mutator) {
-      return groupingCollections[name].update(selector, mutator);
+    serverUpdate: async function(name, selector, mutator) {
+      return groupingCollections[name].updateAsync(selector, mutator);
     },
-    serverRemove: function(name, selector) {
-      return groupingCollections[name].remove(selector);
+    serverRemove: async function(name, selector) {
+      return groupingCollections[name].removeAsync(selector);
     },
-    getCollection: function(name, selector) {
-      return Partitioner.directOperation(() => groupingCollections[name].find(selector || {}).fetch());
+    getCollection: async function(name, selector) {
+      return Partitioner.directOperation(async () => await groupingCollections[name].find(selector || {}).fetchAsync());
     },
-    getMyCollection: function(name, selector) {
-      return groupingCollections[name].find(selector).fetch();
+    getMyCollection: async function(name, selector) {
+      return await groupingCollections[name].find(selector).fetchAsync();
     },
-    printCollection: function(name) {
-      console.log(Partitioner.directOperation(() => groupingCollections[name].find().fetch()));
+    printCollection: async function(name) {
+      console.log(await Partitioner.directOperation(async () => await groupingCollections[name].find().fetchAsync()));
     },
-    printMyCollection: function(name) {
-      console.log(groupingCollections[name].find().fetch());
+    printMyCollection: async function(name) {
+      console.log(await groupingCollections[name].find().fetchAsync());
     }
   });
 
@@ -113,14 +113,14 @@ if (Meteor.isServer) {
   });
 
   Tinytest.add("partitioner - collections - disallow arbitrary insert", (test) => {
-    test.throws(() => {
-      basicInsertCollection.insert({foo: "bar"});
+    test.throws(async () => {
+      await basicInsertCollection.insertAsync({foo: "bar"});
     }, (e) => e.error === 403 && e.reason === ErrMsg.userIdErr);
   });
 
   Tinytest.add("partitioner - collections - insert with overridden group", (test) => {
-    Partitioner.bindGroup("overridden", () => {
-      basicInsertCollection.insert({foo: "bar"});
+    Partitioner.bindGroup("overridden", async () => {
+      await basicInsertCollection.insertAsync({foo: "bar"});
       test.ok();
     });
   });
@@ -130,11 +130,6 @@ if (Meteor.isClient) {
   /*
     These tests need to all async so they are in the right order
   */
-
-  // Ensure we are logged in before running these tests
-  Tinytest.addAsync("partitioner - collections - verify login", (test, next) => {
-    InsecureLogin.ready(next);
-  });
 
   Tinytest.addAsync("partitioner - collections - join group", (test, next) => {
     Meteor.call("joinGroup", myGroup, (err, res) => {
@@ -165,9 +160,9 @@ if (Meteor.isClient) {
     });
   });
 
-  Tinytest.addAsync("partitioner - collections - local empty find", (test, next) => {
-    test.equal(basicInsertCollection.find().count(), 0);
-    test.equal(basicInsertCollection.find({}).count(), 0);
+  Tinytest.addAsync("partitioner - collections - local empty find", async (test, next) => {
+    test.equal(await basicInsertCollection.find().countAsync(), 0);
+    test.equal(await basicInsertCollection.find({}).countAsync(), 0);
     next();
   });
 
@@ -181,22 +176,22 @@ if (Meteor.isClient) {
 
   testAsyncMulti("partitioner - collections - basic insert", [
     (test, expect) => {
-      const id = basicInsertCollection.insert({a: 1}, expect((err, res) => {
+      const id = basicInsertCollection.insertAsync({a: 1}, expect((err, res) => {
         test.isFalse(err, JSON.stringify(err));
         test.equal(res, id);
       }));
     },
-    (test, expect) => {
-      test.equal(basicInsertCollection.find({a: 1}).count(), 1);
-      test.isFalse(basicInsertCollection.findOne({a: 1})._groupId != null);
+    async (test, expect) => {
+      test.equal(await basicInsertCollection.find({a: 1}).countAsync(), 1);
+      test.isFalse((await basicInsertCollection.findOneAsync({a: 1}))._groupId != null);
     }
   ]);
 
   testAsyncMulti("partitioner - collections - find from two groups", [
-    (test, expect) => {
-      test.equal(twoGroupCollection.find().count(), 1);
+    async (test, expect) => {
+      test.equal(await twoGroupCollection.find().countAsync(), 1);
 
-      twoGroupCollection.find().forEach((el) => {
+      (await twoGroupCollection.find().fetchAsync()).forEach((el) => {
         test.isFalse(el._groupId != null);
       });
 
@@ -208,12 +203,12 @@ if (Meteor.isClient) {
   ]);
 
   testAsyncMulti("partitioner - collections - insert into two groups", [
-    (test, expect) => {
-      twoGroupCollection.insert({a: 2}, expect((err) => {
+    async (test, expect) => {
+      twoGroupCollection.insert({a: 2}, expect(async (err) => {
         test.isFalse(err, JSON.stringify(err));
-        test.equal(twoGroupCollection.find().count(), 2);
+        test.equal(await twoGroupCollection.find().countAsync(), 2);
 
-        twoGroupCollection.find().forEach((el) => {
+        (await twoGroupCollection.find().fetchAsync()).forEach((el) => {
           test.isFalse(el._groupId != null);
         });
       }));

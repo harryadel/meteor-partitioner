@@ -4,10 +4,6 @@ const testGroupId = "hooks_bar";
 if (Meteor.isClient) {
   // XXX All async here to ensure ordering
 
-  Tinytest.addAsync("partitioner - hooks - ensure logged in", (test, next) => {
-    InsecureLogin.ready(next);
-  });
-
   Tinytest.addAsync("partitioner - hooks - add client group", (test, next) => {
     Meteor.call("joinGroup", testGroupId, (err, res) => {
       test.isFalse(err);
@@ -82,8 +78,9 @@ if (Meteor.isClient) {
 }
 
 if (Meteor.isServer) {
+  (async () => {
   Meteor.methods({
-    setAdmin: function(value) {
+    setAdmin: async function(value) {
       const userId = Meteor.userId();
       if (!userId) throw new Meteor.Error(403, "not logged in");
       if (value) {
@@ -97,7 +94,7 @@ if (Meteor.isServer) {
   let userId = null;
   let ungroupedUserId = null;
   try {
-    userId = Accounts.createUser({
+    userId = await Accounts.createUser({
       username: testUsername
     });
   } catch (e) {
@@ -105,14 +102,13 @@ if (Meteor.isServer) {
   }
 
   try {
-    ungroupedUserId = Accounts.createUser({
+    ungroupedUserId = await Accounts.createUser({
       username: "blahblah"
     });
   } catch (e) {
     ungroupedUserId = Meteor.users.findOne({username: "blahblah"})._id;
   }
-
-  Partitioner.clearUserGroup(userId);
+  await Partitioner.clearUserGroup(userId);
   Partitioner.setUserGroup(userId, testGroupId);
 
   Tinytest.add("partitioner - hooks - find with no args", (test) => {
@@ -399,4 +395,5 @@ if (Meteor.isServer) {
     test.equal(ctx.args[0].group, testGroupId);
     test.equal(ctx.args[0].admin.$exists, false);
   });
+})();
 } 

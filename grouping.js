@@ -16,27 +16,27 @@ Partitioner._directOps = new Meteor.EnvironmentVariable();
    Public API
 */
 
-Partitioner.setUserGroup = function(userId, groupId) {
+Partitioner.setUserGroup = async function(userId, groupId) {
   check(userId, String);
   check(groupId, String);
-  if (Grouping.findOne(userId)) {
+  if (await Grouping.findOneAsync(userId)) {
     throw new Meteor.Error(403, "User is already in a group");
   }
 
-  Grouping.upsert(userId, {
+  await Grouping.upsertAsync(userId, {
     $set: {groupId: groupId}
   });
 };
 
-Partitioner.getUserGroup = function(userId) {
+Partitioner.getUserGroup = async function(userId) {
   check(userId, String);
-  const grouping = Grouping.findOne(userId);
+  const grouping = await Grouping.findOneAsync(userId);
   return grouping != null ? grouping.groupId : undefined;
 };
 
-Partitioner.clearUserGroup = function(userId) {
+Partitioner.clearUserGroup = async function(userId) {
   check(userId, String);
-  Grouping.remove(userId);
+  await Grouping.removeAsync(userId);
 };
 
 Partitioner.group = function() {
@@ -59,8 +59,8 @@ Partitioner.bindGroup = function(groupId, func) {
   Partitioner._currentGroup.withValue(groupId, func);
 };
 
-Partitioner.bindUserGroup = function(userId, func) {
-  const groupId = Partitioner.getUserGroup(userId);
+Partitioner.bindUserGroup = async function(userId, func) {
+  const groupId = await Partitioner.getUserGroup(userId);
   if (!groupId) {
     Meteor._debug(`Dropping operation because ${userId} is not in a group`);
     return;
@@ -84,7 +84,7 @@ const getPartitionedIndex = function(index) {
   return Object.assign(defaultIndex, index);
 };
 
-Partitioner.partitionCollection = function(collection, options) {
+Partitioner.partitionCollection = async function(collection, options) {
   // Because of the deny below, need to create an allow validator
   // on an insecure collection if there isn't one already
   if (collection._isInsecure()) {
@@ -114,7 +114,7 @@ Partitioner.partitionCollection = function(collection, options) {
   */
 
   // Index the collections by groupId on the server for faster lookups across groups
-  collection._ensureIndex(getPartitionedIndex(options != null ? options.index : undefined), options != null ? options.indexOptions : undefined);
+  collection.createIndex(getPartitionedIndex(options != null ? options.index : undefined), options != null ? options.indexOptions : undefined);
 };
 
 // Publish admin and group for users that have it
@@ -139,8 +139,8 @@ const userFindHook = function(userId, selector, options) {
   if (!userId && !groupId) return true;
 
   if (!groupId) {
-    const user = Meteor.users.findOne(userId, {fields: {groupId: 1, admin: 1}});
-    const grouping = Grouping.findOne(userId);
+    const user = Meteor.users.findOneAsync(userId, {fields: {groupId: 1, admin: 1}});
+    const grouping = Grouping.findOneAsync(userId);
     groupId = grouping != null ? grouping.groupId : undefined;
     // If user is admin and not in a group, proceed as normal (select all users)
     if (user.admin && !groupId) return true;
@@ -168,7 +168,7 @@ Meteor.users.before.find(userFindHook);
 Meteor.users.before.findOne(userFindHook);
 
 // No allow/deny for find so we make our own checks
-const findHook = function(userId, selector, options) {
+const findHook = async function(userId, selector, options) {
   // Don't scope for direct operations
   if (Partitioner._directOps.get() === true) return true;
 
@@ -184,7 +184,7 @@ const findHook = function(userId, selector, options) {
     let groupId = Partitioner._currentGroup.get();
     if (!groupId) {
       if (!userId) throw new Meteor.Error(403, ErrMsg.userIdErr);
-      const grouping = Grouping.findOne(userId);
+      const grouping = await Grouping.findOneAsync(userId);
       groupId = grouping != null ? grouping.groupId : undefined;
       if (!groupId) throw new Meteor.Error(403, ErrMsg.groupErr);
     }
@@ -211,14 +211,13 @@ const findHook = function(userId, selector, options) {
   return true;
 };
 
-const insertHook = function(userId, doc) {
+const insertHook = async function(userId, doc) {
   // Don't add group for direct inserts
   if (Partitioner._directOps.get() === true) return true;
 
-  let groupId = Partitioner._currentGroup.get();
   if (!groupId) {
     if (!userId) throw new Meteor.Error(403, ErrMsg.userIdErr);
-    const grouping = Grouping.findOne(userId);
+    const grouping = await Grouping.findOneAsync(userId);
     groupId = grouping != null ? grouping.groupId : undefined;
     if (!groupId) throw new Meteor.Error(403, ErrMsg.groupErr);
   }

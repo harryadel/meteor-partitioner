@@ -48,8 +48,6 @@ Package.onTest(function (api) {
     'test-helpers'
   ]);
 
-  api.addFiles("tests/insecure_login.js");
-
   api.addFiles('tests/hook_tests.js');
   api.addFiles('tests/grouping_index_tests.js', 'server');
   api.addFiles('tests/grouping_tests.js');
