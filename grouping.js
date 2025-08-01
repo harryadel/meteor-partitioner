@@ -39,7 +39,7 @@ Partitioner.clearUserGroup = async function(userId) {
   await Grouping.removeAsync(userId);
 };
 
-Partitioner.group = function() {
+Partitioner.group = async function() {
   // If group is overridden, return that instead
   const groupId = Partitioner._currentGroup.get();
   if (groupId != null) {
@@ -52,7 +52,7 @@ Partitioner.group = function() {
     // Handle the case where we're outside of a method
   }
   if (!userId) return;
-  return Partitioner.getUserGroup(userId);
+  return await Partitioner.getUserGroup(userId);
 };
 
 Partitioner.bindGroup = function(groupId, func) {
@@ -167,7 +167,7 @@ Meteor.users.before.find(userFindHook);
 Meteor.users.before.findOne(userFindHook);
 
 // No allow/deny for find so we make our own checks
-const findHook = async function(userId, selector, options) {
+const findHook = function(userId, selector, options) {
   // Don't scope for direct operations
   if (Partitioner._directOps.get() === true) return true;
 
@@ -182,10 +182,12 @@ const findHook = async function(userId, selector, options) {
     // Check for global hook
     let groupId = Partitioner._currentGroup.get();
     if (!groupId) {
-      if (!userId) throw new Meteor.Error(403, ErrMsg.userIdErr);
-      const grouping = await Grouping.findOneAsync(userId);
-      groupId = grouping != null ? grouping.groupId : undefined;
-      if (!groupId) throw new Meteor.Error(403, ErrMsg.groupErr);
+      // CANNOT do any async database calls here!
+      // Must fail fast and require proper context setup
+      throw new Meteor.Error(403, 
+        "User find operation attempted outside group context. " +
+        "All operations must be wrapped with Partitioner.bindUserGroup() or Partitioner.bindGroup(). "
+      );
     }
 
     // if object (or empty) selector, just filter by group
@@ -214,10 +216,11 @@ const insertHook = async function(userId, doc) {
   // Don't add group for direct inserts
   if (Partitioner._directOps.get() === true) return true;
 
+  let groupId = Partitioner._currentGroup.get();
   if (!groupId) {
     if (!userId) throw new Meteor.Error(403, ErrMsg.userIdErr);
     const grouping = await Grouping.findOneAsync(userId);
-    groupId = grouping != null ? grouping.groupId : undefined;
+    groupId = grouping?.groupId;
     if (!groupId) throw new Meteor.Error(403, ErrMsg.groupErr);
   }
 
@@ -244,7 +247,7 @@ Grouping.find().observeChanges({
   }
 });
 
-const TestFuncs = {
+TestFuncs = {
   getPartitionedIndex: getPartitionedIndex,
   userFindHook: userFindHook,
   findHook: findHook,

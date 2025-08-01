@@ -10,6 +10,7 @@ Package.onUse(function (api) {
 
   // Client & Server deps
   api.use([
+    'ecmascript',
     'accounts-base',
     'check',
     'ddp', // Meteor.publish available
@@ -36,6 +37,7 @@ Package.onTest(function (api) {
   api.use("mizzao:partitioner");
 
   api.use([
+    'ecmascript',
     'accounts-base',
     'accounts-password', // For createUser
     'ddp', // Meteor.publish available
