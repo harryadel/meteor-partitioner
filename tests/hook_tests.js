@@ -84,9 +84,9 @@ if (Meteor.isServer) {
       const userId = Meteor.userId();
       if (!userId) throw new Meteor.Error(403, "not logged in");
       if (value) {
-        Meteor.users.update(userId, {$set: {admin: true}});
+        await Meteor.users.updateAsync(userId, {$set: {admin: true}});
       } else {
-        Meteor.users.update(userId, {$unset: {admin: null}});
+        await Meteor.users.updateAsync(userId, {$unset: {admin: null}});
       }
     }
   });
@@ -98,7 +98,7 @@ if (Meteor.isServer) {
       username: testUsername
     });
   } catch (e) {
-    userId = Meteor.users.findOne({username: testUsername})._id;
+    userId = await Meteor.users.findOneAsync({username: testUsername})._id;
   }
 
   try {
@@ -106,7 +106,7 @@ if (Meteor.isServer) {
       username: "blahblah"
     });
   } catch (e) {
-    ungroupedUserId = Meteor.users.findOne({username: "blahblah"})._id;
+    ungroupedUserId = await Meteor.users.findOneAsync({username: "blahblah"})._id;
   }
   await Partitioner.clearUserGroup(userId);
   Partitioner.setUserGroup(userId, testGroupId);
