@@ -23,9 +23,11 @@ Partitioner.setUserGroup = async function(userId, groupId) {
     throw new Meteor.Error(403, "User is already in a group");
   }
 
-  await Grouping.upsertAsync(userId, {
+  const result = await Grouping.upsertAsync(userId, {
     $set: {groupId: groupId}
   });
+  
+  return result;
 };
 
 Partitioner.getUserGroup = async function(userId) {
@@ -229,7 +231,7 @@ const insertHook = async function(userId, doc) {
 };
 
 // Sync grouping needed for hooking Meteor.users
-Grouping.find().observeChanges({
+Grouping.find().observeChangesAsync({
   added: async function(id, fields) {
     if (!await Meteor.users.updateAsync(id, {$set: {"group": fields.groupId}})) {
       Meteor._debug(`Tried to set group for nonexistent user ${id}`);
@@ -251,5 +253,6 @@ TestFuncs = {
   getPartitionedIndex: getPartitionedIndex,
   userFindHook: userFindHook,
   findHook: findHook,
-  insertHook: insertHook
+  insertHook: insertHook,
+  Grouping: Grouping
 }; 
