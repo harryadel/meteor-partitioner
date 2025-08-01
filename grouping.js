@@ -139,13 +139,12 @@ const userFindHook = function(userId, selector, options) {
   if (!userId && !groupId) return true;
 
   if (!groupId) {
-    const user = Meteor.users.findOneAsync(userId, {fields: {groupId: 1, admin: 1}});
-    const grouping = Grouping.findOneAsync(userId);
-    groupId = grouping != null ? grouping.groupId : undefined;
-    // If user is admin and not in a group, proceed as normal (select all users)
-    if (user.admin && !groupId) return true;
-    // Normal users need to be in a group
-    if (!groupId) throw new Meteor.Error(403, ErrMsg.groupErr);
+    // CANNOT do any async database calls here!
+    // Must fail fast and require proper context setup
+    throw new Meteor.Error(403, 
+      "User find operation attempted outside group context. " +
+      "All operations must be wrapped with Partitioner.bindUserGroup() or Partitioner.bindGroup(). "
+    );
   }
 
   // Since user is in a group, scope the find to the group
@@ -228,18 +227,18 @@ const insertHook = async function(userId, doc) {
 
 // Sync grouping needed for hooking Meteor.users
 Grouping.find().observeChanges({
-  added: function(id, fields) {
-    if (!Meteor.users.update(id, {$set: {"group": fields.groupId}})) {
+  added: async function(id, fields) {
+    if (!await Meteor.users.updateAsync(id, {$set: {"group": fields.groupId}})) {
       Meteor._debug(`Tried to set group for nonexistent user ${id}`);
     }
   },
-  changed: function(id, fields) {
-    if (!Meteor.users.update(id, {$set: {"group": fields.groupId}})) {
+  changed: async function(id, fields) {
+    if (!await Meteor.users.updateAsync(id, {$set: {"group": fields.groupId}})) {
       Meteor._debug(`Tried to change group for nonexistent user ${id}`);
     }
   },
-  removed: function(id) {
-    if (!Meteor.users.update(id, {$unset: {"group": null}})) {
+  removed: async function(id) {
+    if (!await Meteor.users.updateAsync(id, {$unset: {"group": null}})) {
       Meteor._debug(`Tried to unset group for nonexistent user ${id}`);
     }
   }
