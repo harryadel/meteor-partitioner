@@ -48,7 +48,7 @@ Partitioner.partitionCollection = function(collection) {
   collection.before.insert(insertHook);
 };
 
-const TestFuncs = {
+TestFuncs = {
   userFindHook: userFindHook,
   insertHook: insertHook
 }; 

@@ -63,6 +63,7 @@ Partitioner.bindGroup = function(groupId, func) {
 
 Partitioner.bindUserGroup = async function(userId, func) {
   const groupId = await Partitioner.getUserGroup(userId);
+  console.log("userId:", userId);
   if (!groupId) {
     Meteor._debug(`Dropping operation because ${userId} is not in a group`);
     return;
@@ -143,10 +144,7 @@ const userFindHook = function(userId, selector, options) {
   if (!groupId) {
     // CANNOT do any async database calls here!
     // Must fail fast and require proper context setup
-    throw new Meteor.Error(403, 
-      "User find operation attempted outside group context. " +
-      "All operations must be wrapped with Partitioner.bindUserGroup() or Partitioner.bindGroup(). "
-    );
+    throw new Meteor.Error(403, ErrMsg.groupFindErr);
   }
 
   // Since user is in a group, scope the find to the group
