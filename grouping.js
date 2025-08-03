@@ -155,7 +155,7 @@ const userFindHook = function(userId, selector, options) {
   if (!this.args[0]) {
     this.args[0] = filter;
   } else {
-    Object.assign(selector, filter);
+    Object.assign(this.args[0], filter);
   }
 
   return true;
@@ -176,10 +176,15 @@ const findHook = function(userId, selector, options) {
   // https://github.com/mizzao/meteor-partitioner/issues/9
   // https://github.com/mizzao/meteor-partitioner/issues/10
   if (Helpers.isDirectSelector(selector)) return true;
-  
+
+  // Check for global hook
+  let groupId = Partitioner._currentGroup.get();
+
+  if (!userId && !groupId) {
+    throw new Meteor.Error(403, ErrMsg.userIdErr);
+  }
+
   if (userId) {
-    // Check for global hook
-    let groupId = Partitioner._currentGroup.get();
     if (!groupId) {
       if (!userId) throw new Meteor.Error(403, ErrMsg.userIdErr);
       // CANNOT do any async database calls here!
