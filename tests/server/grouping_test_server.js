@@ -85,26 +85,29 @@ Meteor.methods({
   }
 });
 
-// Tinytest.add("partitioner - grouping - undefined default group", (test) => {
-//   test.equal(Partitioner.group(), undefined);
-// });
+Tinytest.addAsync("partitioner - grouping - undefined default group", async (test) => {
+  const groupResult = await Partitioner.group();
+  test.equal(groupResult, undefined);
+});
 
-// // The overriding is done separately for hooks
-// Tinytest.add("partitioner - grouping - override group environment variable", (test) => {
-//   Partitioner.bindGroup("overridden", () => {
-//     test.equal(Partitioner.group(), "overridden");
-//   });
-// });
+// The overriding is done separately for hooks
+Tinytest.addAsync("partitioner - grouping - override group environment variable", async (test) => {
+  Partitioner.bindGroup("overridden", async () => {
+    test.equal(await Partitioner.group(), "overridden");
+  });
+});
 
-// Tinytest.add("partitioner - collections - disallow arbitrary insert", (test) => {
-//   test.throws(async () => {
-//     await basicInsertCollection.insertAsync({foo: "bar"});
-//   }, (e) => e.error === 403 && e.reason === ErrMsg.userIdErr);
-// });
+Tinytest.add("partitioner - collections - disallow arbitrary insert", (test) => {
+  test.throws(async () => {
+    await basicInsertCollection.insertAsync({foo: "bar"});
+  }, (e) => e.error === 403 && e.reason === ErrMsg.userIdErr);
+});
 
-// Tinytest.add("partitioner - collections - insert with overridden group", (test) => {
-//   Partitioner.bindGroup("overridden", async () => {
-//     await basicInsertCollection.insertAsync({foo: "bar"});
-//     test.ok();
-//   });
-// });
+Tinytest.addAsync("partitioner - collections - insert with overridden group", async (test) => {
+  Partitioner.bindGroup("overridden", async () => {
+    await basicInsertCollection.insertAsync({foo: "bar"});
+    const result = await basicInsertCollection.find({foo: "bar"}).fetchAsync();
+    test.equal(result.length, 1);
+    test.equal(result[0]._groupId, "overridden");
+  });
+});

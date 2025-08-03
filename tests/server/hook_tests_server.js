@@ -21,37 +21,36 @@ const testGroupId = "test_group_server";
   const originalUserId = Meteor.userId;
   Meteor.userId = () => userId;
 
-  // Tinytest.addAsync("partitioner - hooks - find with no args", async (test) => {
-  //   const ctx = {
-  //     args: []
-  //   };
+  Tinytest.addAsync("partitioner - hooks - find with no args", async (test) => {
+    const ctx = {
+      args: []
+    };
 
-  //   const userId = await createTestUserWithGroup(testUsername, testGroupId);
+    const userId = await createTestUserWithGroup(testUsername, testGroupId);
 
-  //   Partitioner.bindGroup(testGroupId, () => {
-  //     TestFuncs.findHook.call(ctx, userId, ctx.args[0], ctx.args[1]);
-  //   });
-  //   // Should replace undefined with { _groupId: ... }
-  //   test.isTrue(ctx.args[0] != null);
-  //   test.equal(ctx.args[0]._groupId, testGroupId);
+    Partitioner.bindGroup(testGroupId, () => {
+      TestFuncs.findHook.call(ctx, userId, ctx.args[0], ctx.args[1]);
+    });
+    // Should replace undefined with { _groupId: ... }
+    test.isTrue(ctx.args[0] != null);
+    test.equal(ctx.args[0]._groupId, testGroupId);
 
-  //   test.isTrue(ctx.args[1] != null);
-  //   test.equal(ctx.args[1].fields._groupId, 0);
-  // });
+    test.isTrue(ctx.args[1] != null);
+    test.equal(ctx.args[1].fields._groupId, 0);
+  });
 
-  // TODO: Reallow it but for now we commented it out
-  // Tinytest.addAsync("partitioner - hooks - find with no group", async (test) => {
-  //   const ctx = {
-  //     args: []
-  //   };
+  Tinytest.addAsync("partitioner - hooks - find with no group", async (test) => {
+    const ctx = {
+      args: []
+    };
 
-  //   const userId = await createTestUserWithGroup(testUsername, testGroupId);
+    const userId = await createTestUserWithGroup(testUsername, testGroupId);
 
-  //   // Should throw if user is not logged in
-  //   test.throws(() => {
-  //     TestFuncs.findHook.call(ctx, undefined, ctx.args[0], ctx.args[1]);
-  //   }, (e) => e.error === 403 && e.reason === ErrMsg.userIdErr);
-  // });
+    // Should throw if user is not logged in
+    test.throws(() => {
+      TestFuncs.findHook.call(ctx, undefined, ctx.args[0], ctx.args[1]);
+    }, (e) => e.error === 403 && e.reason === ErrMsg.userIdErr);
+  });
 
   Tinytest.addAsync("partitioner - hooks - find with string id", async (test) => {
     const ctx = {
@@ -269,8 +268,9 @@ const testGroupId = "test_group_server";
   });
 
   // Tinytest.addAsync("partitioner - hooks - user find with complex _id", async (test) => {
+  //   const notInGroup = "not_in_group";
   //   const ctx = {
-  //     args: [{_id: {$ne: "yabbadabbadoo"}}]
+  //     args: [{_id: {$ne: notInGroup}}]
   //   };
 
   //   const userId = await createTestUserWithGroup(testUsername, testGroupId);
@@ -280,19 +280,24 @@ const testGroupId = "test_group_server";
   //     TestFuncs.userFindHook.call(ctx, undefined, ctx.args[0], ctx.args[1]);
   //   });
   //   // Should have nothing changed
-  //   test.equal(ctx.args[0]._id.$ne, "yabbadabbadoo");
+  //   test.equal(ctx.args[0]._id.$ne, notInGroup);
   //   test.isFalse(ctx.args[0].group);
 
   //   // Ungrouped user should throw an error
   //   test.throws(() => {
   //     TestFuncs.userFindHook.call(ctx, ungroupedUserId, ctx.args[0], ctx.args[1]);
-  //   }, (e) => e.error === 403 && e.reason === ErrMsg.groupErr);
+  //     // we changed this test to throw groupFindErr instead of groupErr
+  //     // as due to 3.0 compability where we would not be able to fetch the user asynchronously
+  //     // and we would not be able to use the groupFindErr message
+  //     // so we fail quickly and require proper context setup
+  //   }, (e) => e.error === 403 && e.reason === ErrMsg.groupFindErr);
 
   //   Partitioner.bindUserGroup(userId, () => {
   //     TestFuncs.userFindHook.call(ctx, userId, ctx.args[0], ctx.args[1]);
   //   });
+    
   //   // Should be modified
-  //   test.equal(ctx.args[0]._id.$ne, "yabbadabbadoo");
+  //   test.equal(ctx.args[0]._id.$ne, notInGroup);
   //   test.equal(ctx.args[0].group, testGroupId);
   //   test.equal(ctx.args[0].admin.$exists, false);
   // });

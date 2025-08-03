@@ -57,8 +57,10 @@ Partitioner.group = async function() {
   return await Partitioner.getUserGroup(userId);
 };
 
-Partitioner.bindGroup = function(groupId, func) {
-  Partitioner._currentGroup.withValue(groupId, func);
+Partitioner.bindGroup = async function(groupId, func) {
+  const result = await Partitioner._currentGroup.withValue(groupId, func);
+  console.log("RESULT: ", result)
+  return result;
 };
 
 Partitioner.bindUserGroup = async function(userId, func) {
