@@ -12,3 +12,36 @@ export async function createTestUserWithGroup(usernamePrefix = "test_user", grou
   
   return testUserId;
 }
+
+
+export const initializeTestCollections = () => {
+
+/*
+  Set up server and client hooks
+*/
+let hookCollection;
+
+const basicInsertCollection = new Mongo.Collection("basicInsert");
+const twoGroupCollection = new Mongo.Collection("twoGroup");
+
+
+const groupingCollections = {};
+
+groupingCollections.basicInsert = basicInsertCollection;
+groupingCollections.twoGroup = twoGroupCollection;
+
+hookCollection = (collection) => {
+  collection._insecure = true;
+  // Attach the hooks to the collection
+  Partitioner.partitionCollection(collection);
+};
+
+
+/*
+  Hook collections and run tests
+*/
+hookCollection(basicInsertCollection);
+hookCollection(twoGroupCollection);
+
+return groupingCollections;
+}

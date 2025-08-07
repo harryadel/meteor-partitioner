@@ -1,32 +1,7 @@
 import { createTestUser } from "../utils.js";
+import { initializeTestCollections } from "../utils.js";
 
-/*
-  Set up server and client hooks
-*/
-let hookCollection;
-
-const basicInsertCollection = new Mongo.Collection("basicInsert");
-const twoGroupCollection = new Mongo.Collection("twoGroup");
-
-
-const groupingCollections = {};
-
-groupingCollections.basicInsert = basicInsertCollection;
-groupingCollections.twoGroup = twoGroupCollection;
-
-hookCollection = (collection) => {
-  collection._insecure = true;
-  // Attach the hooks to the collection
-  Partitioner.partitionCollection(collection);
-};
-
-
-
-/*
-  Hook collections and run tests
-*/
-hookCollection(basicInsertCollection);
-hookCollection(twoGroupCollection);
+const groupingCollections = initializeTestCollections();
 
 // We create the collections in the publisher (instead of using a method or
 // something) because if we made them with a method, we'd need to follow the
@@ -37,22 +12,22 @@ hookCollection(twoGroupCollection);
 Meteor.publish("groupingTests", async function() {
   if (!this.userId) return;
 
-  Partitioner.directOperation(async () => {
-    await basicInsertCollection.removeAsync({});
-    await twoGroupCollection.removeAsync({});
+  await Partitioner.directOperation(async () => {
+    await groupingCollections.basicInsert.removeAsync({});
+    await groupingCollections.twoGroup.removeAsync({});
   });
 
-  const cursors = [basicInsertCollection.find(), twoGroupCollection.find()];
+  const cursors = [groupingCollections.basicInsert.find(), groupingCollections.twoGroup.find()];
 
   Meteor._debug("grouping publication activated");
 
-  Partitioner.directOperation(async () => {
-    await twoGroupCollection.insertAsync({
+  await Partitioner.directOperation(async () => {
+    await groupingCollections.twoGroup.insertAsync({
       _groupId: myGroup,
       a: 1
     });
 
-    await twoGroupCollection.insertAsync({
+    await groupingCollections.twoGroup.insertAsync({
       _groupId: otherGroup,
       a: 1
     });
@@ -80,7 +55,8 @@ Meteor.methods({
     return groupingCollections[name].removeAsync(selector);
   },
   getCollection: async function(name, selector) {
-    return Partitioner.directOperation(async () => await groupingCollections[name].find(selector || {}).fetchAsync());
+    const result = await Partitioner.directOperation(async () => await groupingCollections[name].find(selector || {}).fetchAsync())
+    return result;
   },
   getMyCollection: async function(name, selector) {
     return await groupingCollections[name].find(selector).fetchAsync();
@@ -113,7 +89,7 @@ Tinytest.addAsync("partitioner - grouping - override group environment variable"
 
 Tinytest.addAsync("partitioner - collections - disallow arbitrary insert", async (test) => {
   try {
-      await basicInsertCollection.insertAsync({foo: "bar"});
+      await groupingCollections.basicInsert.insertAsync({foo: "bar"});
       test.fail("Expected insert to throw an error");
     } catch (error) {
       test.equal(error.error, 403);
@@ -123,8 +99,8 @@ Tinytest.addAsync("partitioner - collections - disallow arbitrary insert", async
 
 Tinytest.addAsync("partitioner - collections - insert with overridden group", async (test) => {
   await Partitioner.bindGroup("overridden", async () => {
-    await basicInsertCollection.insertAsync({foo: "bar"});
-    const result = await basicInsertCollection.find({foo: "bar"}).fetchAsync();
+    await groupingCollections.basicInsert.insertAsync({foo: "bar"});
+    const result = await groupingCollections.basicInsert.find({foo: "bar"}).fetchAsync();
     test.equal(result.length, 1);
     test.equal(result[0]._groupId, "overridden");
   });
