@@ -1,3 +1,5 @@
+import { createTestUser } from "../utils.js";
+
 /*
   Set up server and client hooks
 */
@@ -85,6 +87,18 @@ Meteor.methods({
   }
 });
 
+// Tinytest.addAsync("partitioner - collections - local empty find", async (test) => {
+//   const userId = await createTestUser();
+//   const originalUserId = Meteor.userId;
+//   Meteor.userId = () => userId;
+
+//   test.equal(await basicInsertCollection.find().countAsync(), 0);
+//   test.equal(await basicInsertCollection.find({}).countAsync(), 0);
+
+//   Meteor.userId = originalUserId;
+// });
+
+
 Tinytest.addAsync("partitioner - grouping - undefined default group", async (test) => {
   const groupResult = await Partitioner.group();
   test.equal(groupResult, undefined);
@@ -97,14 +111,18 @@ Tinytest.addAsync("partitioner - grouping - override group environment variable"
   });
 });
 
-Tinytest.add("partitioner - collections - disallow arbitrary insert", (test) => {
-  test.throws(async () => {
-    await basicInsertCollection.insertAsync({foo: "bar"});
-  }, (e) => e.error === 403 && e.reason === ErrMsg.userIdErr);
+Tinytest.addAsync("partitioner - collections - disallow arbitrary insert", async (test) => {
+  try {
+      await basicInsertCollection.insertAsync({foo: "bar"});
+      test.fail("Expected insert to throw an error");
+    } catch (error) {
+      test.equal(error.error, 403);
+      test.equal(error.reason, ErrMsg.userIdErr);
+    }
 });
 
 Tinytest.addAsync("partitioner - collections - insert with overridden group", async (test) => {
-  Partitioner.bindGroup("overridden", async () => {
+  await Partitioner.bindGroup("overridden", async () => {
     await basicInsertCollection.insertAsync({foo: "bar"});
     const result = await basicInsertCollection.find({foo: "bar"}).fetchAsync();
     test.equal(result.length, 1);
