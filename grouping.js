@@ -10,6 +10,7 @@ const Grouping = new Mongo.Collection("ts.grouping");
 
 // Meteor environment variables for scoping group operations
 Partitioner._currentGroup = new Meteor.EnvironmentVariable();
+Partitioner._isDirectGroupContext = new Meteor.EnvironmentVariable();
 Partitioner._directOps = new Meteor.EnvironmentVariable();
 
 /*
@@ -58,8 +59,9 @@ Partitioner.group = async function() {
 };
 
 Partitioner.bindGroup = async function(groupId, func) {
-  const result = await Partitioner._currentGroup.withValue(groupId, func);
-  console.log("RESULT: ", result)
+  const result = await Partitioner._isDirectGroupContext.withValue(true, () => {
+    return Partitioner._currentGroup.withValue(groupId, func);
+  });
   return result;
 };
 
@@ -69,7 +71,10 @@ Partitioner.bindUserGroup = async function(userId, func) {
     Meteor._debug(`Dropping operation because ${userId} is not in a group`);
     return;
   }
-  Partitioner.bindGroup(groupId, func);
+  const result = await Partitioner._isDirectGroupContext.withValue(false, () => {
+    return Partitioner._currentGroup.withValue(groupId, func);
+  });
+  return result;
 };
 
 Partitioner.directOperation = function(func) {
@@ -138,10 +143,12 @@ const userFindHook = function(userId, selector, options) {
   if (Helpers.isDirectUserSelector(selector)) return true;
 
   let groupId = Partitioner._currentGroup.get();
+  let isDirectGroupContext = Partitioner._isDirectGroupContext.get();
   // This hook doesn't run if we're not in a method invocation or publish
   // function, and Partitioner._currentGroup is not set
   if (!userId && !groupId) return true;
-
+  if (!userId && !isDirectGroupContext) return true;
+  
   if (!groupId) {
     // CANNOT do any async database calls here!
     // Must fail fast and require proper context setup

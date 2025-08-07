@@ -169,46 +169,46 @@ const testGroupId = "test_group_server";
     test.equal(ctx.args[0]._groupId, testGroupId);
   });
 
-  // Tinytest.addAsync("partitioner - hooks - user find with no args", async (test) => {
-  //   const ctx = {
-  //     args: []
-  //   };
-
-  //   const userId = await createTestUserWithGroup(testUsername, testGroupId);
-  //   const ungroupedUserId = await createTestUser();
-
-  //   Partitioner.bindUserGroup(userId, () => {
-  //     TestFuncs.userFindHook.call(ctx, undefined, ctx.args[0], ctx.args[1]);
-  //   });
-
-  //   // Should have nothing changed
-  //   test.length(ctx.args, 0);
-
-  //   // Ungrouped user should throw an error
-  //   test.throws(() => {
-  //       TestFuncs.userFindHook.call(ctx, ungroupedUserId, ctx.args[0], ctx.args[1]);
-  //   }, (e) => e.error === 403 && e.reason === ErrMsg.groupFindErr);
-
-  //   Partitioner.bindUserGroup(userId, () => {
-  //     TestFuncs.userFindHook.call(ctx, userId, ctx.args[0], ctx.args[1]);
-  //   });
-
-  //   // Should replace undefined with { _groupId: ... }
-  //   test.equal(ctx.args[0].group, testGroupId);
-  //   test.equal(ctx.args[0].admin.$exists, false);
-  // });
-
-  Tinytest.add("partitioner - hooks - user find with environment group but no userId", (test) => {
+  Tinytest.addAsync("partitioner - hooks - user find with no args", async (test) => {
     const ctx = {
       args: []
     };
 
-    Partitioner.bindGroup(testGroupId, () => {
+    const userId = await createTestUserWithGroup(testUsername, testGroupId);
+    const ungroupedUserId = await createTestUser();
+
+    await Partitioner.bindUserGroup(userId, () => {
       TestFuncs.userFindHook.call(ctx, undefined, ctx.args[0], ctx.args[1]);
-      // Should have set the extra arguments
-      test.equal(ctx.args[0].group, testGroupId);
-      test.equal(ctx.args[0].admin.$exists, false);
     });
+
+    // Should have nothing changed
+    test.length(ctx.args, 0);
+
+    // Ungrouped user should throw an error
+    test.throws(() => {
+        TestFuncs.userFindHook.call(ctx, ungroupedUserId, ctx.args[0], ctx.args[1]);
+    }, (e) => e.error === 403 && e.reason === ErrMsg.groupFindErr);
+
+    await Partitioner.bindUserGroup(userId, () => {
+      TestFuncs.userFindHook.call(ctx, userId, ctx.args[0], ctx.args[1]);
+    });
+
+    // Should replace undefined with { _groupId: ... }
+    test.equal(ctx.args[0].group, testGroupId);
+    test.equal(ctx.args[0].admin.$exists, false);
+  });
+
+  Tinytest.addAsync("partitioner - hooks - user find with environment group but no userId", async (test) => {
+    const ctx = {
+      args: []
+    };
+
+    await Partitioner.bindGroup(testGroupId, () => {
+      TestFuncs.userFindHook.call(ctx, undefined, ctx.args[0], ctx.args[1]);
+    });
+    // Should have set the extra arguments
+    test.equal(ctx.args[0].group, testGroupId);
+    test.equal(ctx.args[0].admin.$exists, false);
   });
 
   Tinytest.addAsync("partitioner - hooks - user find with string id", async (test) => {
@@ -267,40 +267,40 @@ const testGroupId = "test_group_server";
     test.isFalse(ctx.args[0].group);
   });
 
-  // Tinytest.addAsync("partitioner - hooks - user find with complex _id", async (test) => {
-  //   const notInGroup = "not_in_group";
-  //   const ctx = {
-  //     args: [{_id: {$ne: notInGroup}}]
-  //   };
+  Tinytest.addAsync("partitioner - hooks - user find with complex _id", async (test) => {
+    const notInGroup = "not_in_group";
+    const ctx = {
+      args: [{_id: {$ne: notInGroup}}]
+    };
 
-  //   const userId = await createTestUserWithGroup(testUsername, testGroupId);
-  //   const ungroupedUserId = await createTestUser();
+    const userId = await createTestUserWithGroup(testUsername, testGroupId);
+    const ungroupedUserId = await createTestUser();
 
-  //   Partitioner.bindUserGroup(userId, () => {
-  //     TestFuncs.userFindHook.call(ctx, undefined, ctx.args[0], ctx.args[1]);
-  //   });
-  //   // Should have nothing changed
-  //   test.equal(ctx.args[0]._id.$ne, notInGroup);
-  //   test.isFalse(ctx.args[0].group);
+    await Partitioner.bindUserGroup(userId, () => {
+      TestFuncs.userFindHook.call(ctx, undefined, ctx.args[0], ctx.args[1]);
+    });
+    // Should have nothing changed
+    test.equal(ctx.args[0]._id.$ne, notInGroup);
+    test.isFalse(ctx.args[0].group);
 
-  //   // Ungrouped user should throw an error
-  //   test.throws(() => {
-  //     TestFuncs.userFindHook.call(ctx, ungroupedUserId, ctx.args[0], ctx.args[1]);
-  //     // we changed this test to throw groupFindErr instead of groupErr
-  //     // as due to 3.0 compability where we would not be able to fetch the user asynchronously
-  //     // and we would not be able to use the groupFindErr message
-  //     // so we fail quickly and require proper context setup
-  //   }, (e) => e.error === 403 && e.reason === ErrMsg.groupFindErr);
+    // Ungrouped user should throw an error
+    test.throws(() => {
+      TestFuncs.userFindHook.call(ctx, ungroupedUserId, ctx.args[0], ctx.args[1]);
+      // we changed this test to throw groupFindErr instead of groupErr
+      // as due to 3.0 compability where we would not be able to fetch the user asynchronously
+      // and we would not be able to use the groupFindErr message
+      // so we fail quickly and require proper context setup
+    }, (e) => e.error === 403 && e.reason === ErrMsg.groupFindErr);
 
-  //   Partitioner.bindUserGroup(userId, () => {
-  //     TestFuncs.userFindHook.call(ctx, userId, ctx.args[0], ctx.args[1]);
-  //   });
+    await Partitioner.bindUserGroup(userId, () => {
+      TestFuncs.userFindHook.call(ctx, userId, ctx.args[0], ctx.args[1]);
+    });
     
-  //   // Should be modified
-  //   test.equal(ctx.args[0]._id.$ne, notInGroup);
-  //   test.equal(ctx.args[0].group, testGroupId);
-  //   test.equal(ctx.args[0].admin.$exists, false);
-  // });
+    // Should be modified
+    test.equal(ctx.args[0]._id.$ne, notInGroup);
+    test.equal(ctx.args[0].group, testGroupId);
+    test.equal(ctx.args[0].admin.$exists, false);
+  });
 
   Tinytest.addAsync("partitioner - hooks - user find with username", async (test) => {
     const ctx = {
@@ -349,36 +349,36 @@ const testGroupId = "test_group_server";
   //   test.equal(ctx.args[0].admin.$exists, false);
   // });
 
-  // Tinytest.addAsync("partitioner - hooks - user find with selector", async (test) => {
-  //   const ctx = {
-  //     args: [{foo: "bar"}]
-  //   };
+  Tinytest.addAsync("partitioner - hooks - user find with selector", async (test) => {
+    const ctx = {
+      args: [{foo: "bar"}]
+    };
 
-  //   const userId = await createTestUserWithGroup(testUsername, testGroupId);
-  //   const ungroupedUserId = await createTestUser();
+    const userId = await createTestUserWithGroup(testUsername, testGroupId);
+    const ungroupedUserId = await createTestUser();
 
-  //   Partitioner.bindUserGroup(userId, () => {
-  //     TestFuncs.userFindHook.call(ctx, undefined, ctx.args[0], ctx.args[1]);
-  //   });
+    await Partitioner.bindUserGroup(userId, () => {
+      TestFuncs.userFindHook.call(ctx, undefined, ctx.args[0], ctx.args[1]);
+    });
 
-  //   // Should have nothing changed
-  //   test.equal(ctx.args[0].foo, "bar");
-  //   test.isFalse(ctx.args[0].group);
+    // Should have nothing changed
+    test.equal(ctx.args[0].foo, "bar");
+    test.isFalse(ctx.args[0].group);
 
-  //   // Ungrouped user should throw an error
-  //   test.throws(() => {
-  //     TestFuncs.userFindHook.call(ctx, ungroupedUserId, ctx.args[0], ctx.args[1]);
-  //   }, (e) => e.error === 403 && e.reason === ErrMsg.groupFindErr);
+    // Ungrouped user should throw an error
+    test.throws(() => {
+      TestFuncs.userFindHook.call(ctx, ungroupedUserId, ctx.args[0], ctx.args[1]);
+    }, (e) => e.error === 403 && e.reason === ErrMsg.groupFindErr);
 
-  //   Partitioner.bindUserGroup(userId, () => {
-  //     TestFuncs.userFindHook.call(ctx, userId, ctx.args[0], ctx.args[1]);
-  //   });
+    await Partitioner.bindUserGroup(userId, () => {
+      TestFuncs.userFindHook.call(ctx, userId, ctx.args[0], ctx.args[1]);
+    });
 
-  //   // Should modify the selector
-  //   test.equal(ctx.args[0].foo, "bar");
-  //   test.equal(ctx.args[0].group, testGroupId);
-  //   test.equal(ctx.args[0].admin.$exists, false);
-  // });
+    // Should modify the selector
+    test.equal(ctx.args[0].foo, "bar");
+    test.equal(ctx.args[0].group, testGroupId);
+    test.equal(ctx.args[0].admin.$exists, false);
+  });
   
   Meteor.userId = originalUserId;
 })();
