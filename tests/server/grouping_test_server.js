@@ -63,16 +63,23 @@ Meteor.methods({
   }
 });
 
-// Tinytest.addAsync("partitioner - collections - local empty find", async (test) => {
-//   const userId = await createTestUser();
-//   const originalUserId = Meteor.userId;
-//   Meteor.userId = () => userId;
+Tinytest.addAsync("partitioner - collections - local empty find", async (test) => {
+  const userId = await createTestUser();
+  const originalUserId = Meteor.userId;
+  Meteor.userId = () => userId;
 
-//   test.equal(await basicInsertCollection.find().countAsync(), 0);
-//   test.equal(await basicInsertCollection.find({}).countAsync(), 0);
+  // Ensure the user has a group and run finds in that group context
+  const testGroupId = "server_test_group";
+  await Partitioner.clearUserGroup(userId);
+  await Partitioner.setUserGroup(userId, testGroupId);
 
-//   Meteor.userId = originalUserId;
-// });
+  await Partitioner.bindUserGroup(userId, async () => {
+    test.equal(await groupingCollections.basicInsert.find().countAsync(), 0);
+    test.equal(await groupingCollections.basicInsert.find({}).countAsync(), 0);
+  });
+
+  Meteor.userId = originalUserId;
+});
 
 
 Tinytest.addAsync("partitioner - grouping - undefined default group", async (test) => {
