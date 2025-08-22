@@ -16,6 +16,11 @@ export async function createTestUserWithGroup(usernamePrefix = "test_user", grou
 
 export const initializeTestCollections = () => {
 
+// Reuse collections across test files to avoid duplicate collection errors
+if (globalThis.__partitionerTestCollections) {
+  return globalThis.__partitionerTestCollections;
+}
+
 /*
   Set up server and client hooks
 */
@@ -43,5 +48,6 @@ hookCollection = (collection) => {
 hookCollection(basicInsertCollection);
 hookCollection(twoGroupCollection);
 
+globalThis.__partitionerTestCollections = groupingCollections;
 return groupingCollections;
 }

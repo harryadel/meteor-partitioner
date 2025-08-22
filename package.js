@@ -52,7 +52,7 @@ Package.onTest(function (api) {
 
   api.addFiles('tests/utils.js');
   api.addFiles('tests/client/hook_tests_client.js', 'client');
-  api.addFiles('tests/client/grouping_test_client.js', 'client');
+  api.addFiles('tests/grouping_integration_tests.js');
   api.addFiles('tests/server/hook_tests_server.js', 'server');
   api.addFiles('tests/server/grouping_test_server.js', 'server');
   api.addFiles('tests/server/grouping_index_tests.js', 'server');
