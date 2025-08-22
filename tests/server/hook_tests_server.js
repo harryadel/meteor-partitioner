@@ -320,34 +320,34 @@ const testGroupId = "test_group_server";
     test.isFalse(ctx.args[0].group);
   });
 
-  // Tinytest.addAsync("partitioner - hooks - user find with complex username", async (test) => {
-  //   const ctx = {
-  //     args: [{username: {$ne: "yabbadabbadoo"}}]
-  //   };
+  Tinytest.addAsync("partitioner - hooks - user find with complex username", async (test) => {
+    const ctx = {
+      args: [{username: {$ne: "yabbadabbadoo"}}]
+    };
 
-  //   const userId = await createTestUserWithGroup(testUsername, testGroupId);
-  //   const ungroupedUserId = await createTestUser();
+    const userId = await createTestUserWithGroup(testUsername, testGroupId);
+    const ungroupedUserId = await createTestUser();
 
-  //   TestFuncs.userFindHook.call(ctx, undefined, ctx.args[0], ctx.args[1]);
+    TestFuncs.userFindHook.call(ctx, undefined, ctx.args[0], ctx.args[1]);
     
-  //   // Should have nothing changed
-  //   test.equal(ctx.args[0].username.$ne, "yabbadabbadoo");
-  //   test.isFalse(ctx.args[0].group);
+    // Should have nothing changed
+    test.equal(ctx.args[0].username.$ne, "yabbadabbadoo");
+    test.isFalse(ctx.args[0].group);
 
-  //   // Ungrouped user should throw an error
-  //   test.throws(() => {
-  //     TestFuncs.userFindHook.call(ctx, ungroupedUserId, ctx.args[0], ctx.args[1]);
-  //   }, (e) => e.error === 403 && e.reason === ErrMsg.groupFindErr);
+    // Ungrouped user should throw an error
+    test.throws(() => {
+      TestFuncs.userFindHook.call(ctx, ungroupedUserId, ctx.args[0], ctx.args[1]);
+    }, (e) => e.error === 403 && e.reason === ErrMsg.groupFindErr);
 
-  //   Partitioner.bindUserGroup(userId, () => {
-  //     TestFuncs.userFindHook.call(ctx, userId, ctx.args[0], ctx.args[1]);
-  //   });
+    await Partitioner.bindUserGroup(userId, () => {
+      TestFuncs.userFindHook.call(ctx, userId, ctx.args[0], ctx.args[1]);
+    });
     
-  //   // Should be modified
-  //   test.equal(ctx.args[0].username.$ne, "yabbadabbadoo");
-  //   test.equal(ctx.args[0].group, testGroupId);
-  //   test.equal(ctx.args[0].admin.$exists, false);
-  // });
+    // Should be modified
+    test.equal(ctx.args[0].username.$ne, "yabbadabbadoo");
+    test.equal(ctx.args[0].group, testGroupId);
+    test.equal(ctx.args[0].admin.$exists, false);
+  });
 
   Tinytest.addAsync("partitioner - hooks - user find with selector", async (test) => {
     const ctx = {
