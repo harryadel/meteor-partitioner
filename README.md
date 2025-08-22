@@ -21,15 +21,26 @@ Install with Meteor:
 meteor add mizzao:partitioner
 ```
 
+## Compatibility
+
+- Meteor: 3.0+
+- Hooks: matb33:collection-hooks@2.x (used internally)
+
 ## Usage
 
 Partitioner uses the [collection-hooks](https://github.com/matb33/meteor-collection-hooks) package to transparently intercept collection operations on the client and server side so that writing code for each group of users is almost the same as writing for the whole app. Only minor modifications from a standalone app designed for a single group of users is necessary.
 
-Partitioner operates at the collection level. On the server and client, call `Partition.partitionCollection` immediately after declaring a collection:
+Partitioner operates at the collection level. On the server and client, call `Partitioner.partitionCollection` immediately after declaring a collection:
 
 ```
 Foo = new Mongo.Collection("foo");
+// Client: synchronous hook registration
 Partitioner.partitionCollection(Foo, options);
+
+// Server: recommended to await during startup
+Meteor.startup(async () => {
+  await Partitioner.partitionCollection(Foo, options);
+});
 ```
 
 `options` determines how the partitioned collection will behave. The fields that are supported are
@@ -46,43 +57,74 @@ Collections that have been partitioned will behave as if there is a separate ins
 
 This is accomplished using selector rewriting based on the current `userId` both on the client and in server methods, and Meteor's environment variables. For more details see the source.
 
+### Async database APIs in Meteor 3
+
+Meteor 3 collection methods are async. Helpers used in this repo/tests include:
+
+- `findOneAsync`, `fetchAsync`, `countAsync`, `insertAsync`, `updateAsync`, `removeAsync`, and `createIndex(...)`.
+
+Use `await` for server code and tests where appropriate.
+
 ## Common (Client/Server) API
 
 #### `Partitioner.partitionCollection(Mongo.Collection, options)`
 
 Adds hooks to a particular collection so that it supports partition operations. This should be declared immediately after `new Mongo.Collection` on both the server and the client.
 
+- Client: synchronous
+- Server: async (await recommended during startup)
+
 **NOTE**: Any documents in the collection that were not created from a group will not be visible to any groups in the partition. You should think of creating a partitioned collection as an atomic operation consisting of declaring the collection and calling `partitionCollection`; we will consider rolling this into a single API call in the future.
 
 #### `Partitioner.group()`
 
-On the server and client, gets the group of the current user. Returns `undefined` if the user is not logged in or not part of a group. A reactive variable.
+Gets the group of the current user. Returns `undefined` if the user is not logged in or not part of a group.
+
+- Client: synchronous and reactive (depends on the logged-in user document)
+- Server: async (returns a Promise)
 
 ## Server API
 
-#### `Partitioner.setUserGroup(userId, groupId)`
+#### `Partitioner.setUserGroup(userId, groupId)` (async)
 
 Adds a particular user to the group identified by `groupId`. The user will now be able to operate on partitioned collections and will only be able to affect documents scoped to the group. An error will be thrown if the user is already in a group.
 
-#### `Partitioner.getUserGroup(userId)`
+#### `Partitioner.getUserGroup(userId)` (async)
 
 Gets the group of the current user.
 
-#### `Partitioner.clearUserGroup(userId)`
+#### `Partitioner.clearUserGroup(userId)` (async)
 
 Removes the current group assignment of the user. The user will no longer be able to operate on any partitioned collections.
 
-#### `Partitioner.bindGroup(groupId, func)`
+#### `Partitioner.bindGroup(groupId, func)` (async)
 
 Run a function (presumably doing collection operations) masquerading as a particular group. This is necessary for server-originated code that isn't caused by one particular user.
 
-#### `Partitioner.bindUserGroup(userId, func)`
+#### `Partitioner.bindUserGroup(userId, func)` (async)
 
 A convenience function for running `Partitioner.bindGroup` as the group of a particular user.
 
-#### `Partitioner.directOperation(func)`
+#### `Partitioner.directOperation(func)` (sync wrapper)
 
 Sometimes we need to do operations over the entire underlying collection, including all groups. This provides a way to do that, and will not throw an error if the current user method invocation context is not part of a group.
+
+Notes:
+- This is a synchronous wrapper around an environment flag. It does not return the value of `func`.
+- If `func` is async, capture/return its Promise yourself from the calling site and `await` that, rather than awaiting `Partitioner.directOperation`.
+
+Example:
+
+```js
+// GOOD
+const result = await (async () => {
+  let value;
+  Partitioner.directOperation(async () => {
+    value = await SomeCollection.find(selector).fetchAsync();
+  });
+  return value;
+})();
+```
 
 ## Configuring Subscriptions
 
@@ -116,13 +158,20 @@ Deps.autorun(function() {
 
 ## Partitioning of `Meteor.users`
 
-`Meteor.users` is partitioned by default. Users will only see other users in their group in default publications. However, unscoped operations do not throw an error, because server operations (login, etc) need to proceed as normal when groups are not specified. This generally causes everything to work as expected, but please report any unexpected behavior that you see.
+`Meteor.users` is partitioned by default.
+
+- Server: user finds must run inside a group context (`Partitioner.bindUserGroup` or `Partitioner.bindGroup`). Outside of a group context, user find operations throw `403` with reason `User find operation attempted outside group context`.
+- Client: regular users are filtered server-side; for admin users, the client hook additionally merges `{ admin: { $exists: false } }` into global user finds so admins don’t see themselves in global lists.
+- The package publishes `admin` and `group` fields of the current user so `Partitioner.group()` can be reactive on the client.
 
 ## Admin users
 
-Partitioner treats users with `admin: true` as special. These users are able to see the entire contents of partitioned collections as well as all users when they are not assigned to a group, and operations will not result in errors.
+Admin users are identified via `Meteor.user().admin === true`.
 
-However, when admin users join a group, they will only see the data and users in that group (if you set up the subscriptions as noted above.) They will also, currently, be unable to do **any** operations on partitioned collections. The idea is to allow admin users to be able to join games, chatrooms, etc for observational purposes, but to prevent them from making unintended edits from the user interface.
+- Admins can see all partitioned collections when not assigned to a group.
+- When an admin joins a group, they only see that group's data (consistent with non-admin behavior).
+- Admins are prevented from writes to partitioned collections via a deny rule.
+- Client-only: global finds on `Meteor.users` for admins exclude admin users themselves.
 
 If you would like to see other ways to define admin permissions, please open an issue.
 
@@ -155,13 +204,18 @@ ChatMessages.insert({text: "hello world", room: currentRoom, timestamp: Date.now
 
 This looks simple enough, until you realize that you need to keep track of the `room` for each message that is entered in to the collection. Why not have some code do it for you automagically?
 
-### After
+### After (Meteor 3, async APIs)
 
 With this package, you can create a partition of the `ChatMessages` collection:
 
 ```js
 ChatMessages = new Mongo.Collection("messages");
+// Client
 Partitioner.partitionCollection(ChatMessages, {index: {timestamp: 1}});
+// Server
+Meteor.startup(async () => {
+  await Partitioner.partitionCollection(ChatMessages, {index: {timestamp: 1}});
+});
 ```
 
 The second argument tells the partitioner that you want an index of `timestamp` within each group. Partitioned lookups using `timestamp` will be done efficiently. Then, you can just write your publication as follows:
