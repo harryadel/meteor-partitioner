@@ -77,8 +77,8 @@ Partitioner.bindUserGroup = async function(userId, func) {
   return result;
 };
 
-Partitioner.directOperation = function(func) {
-  Partitioner._directOps.withValue(true, func);
+Partitioner.directOperation = async function(func) {
+  return await Partitioner._directOps.withValue(true, func);
 };
 
 // This can be replaced - currently not documented

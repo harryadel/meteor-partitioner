@@ -54,3 +54,42 @@ Tinytest.addAsync("partitioner - collections - insert with overridden group", as
     test.equal(result[0]._groupId, "overridden");
   });
 });
+
+Tinytest.addAsync("partitioner - directOperation - returns value from async function", async (test) => {
+  // Create a test collection for this specific test
+  let TestAccessCodes;
+  if (!Mongo.getCollection("test_access_codes")) {
+    TestAccessCodes = new Mongo.Collection("test_access_codes");
+    TestAccessCodes._insecure = true;
+    await Partitioner.partitionCollection(TestAccessCodes);
+  } else {
+    TestAccessCodes = Mongo.getCollection("test_access_codes"); 
+  }
+
+  const testCode = "TEST123";
+  const testData = { accessCode: testCode, userId: "test_user_123", createdAt: new Date() };
+
+  // Insert test data using directOperation to bypass group restrictions
+  await Partitioner.directOperation(async () => {
+    await TestAccessCodes.insertAsync(testData);
+  });
+
+  // Test that directOperation returns the value from the async function
+  const group = await (async () => {
+    let value;
+    Partitioner.directOperation(() => {
+      value = TestAccessCodes.findOneAsync({ accessCode: testCode });
+    });
+    return await value;
+  })();
+
+  // Verify the returned value is what we expect
+  test.isNotNull(group);
+  test.equal(group.accessCode, testCode);
+  test.equal(group.userId, "test_user_123");
+
+  // Clean up test data
+  await Partitioner.directOperation(async () => {
+    await TestAccessCodes.removeAsync({});
+  });
+});
