@@ -6,12 +6,86 @@
 */
 
 Partitioner = {};
-const Grouping = new Mongo.Collection("ts.grouping");
+
+// Configuration options
+Partitioner.config = {
+  useMeteorUsers: false, // Set to true to use Meteor.users instead of separate Grouping collection
+  groupingCollectionName: "ts.grouping", // Name of the grouping collection when not using Meteor.users
+  disableUserManagementHooks: false // Set to true to disable hooks on user management operations when using Meteor.users
+};
+
+// Initialize collections based on configuration
+const Grouping = new Mongo.Collection(Partitioner.config.groupingCollectionName);
 
 // Meteor environment variables for scoping group operations
 Partitioner._currentGroup = new Meteor.EnvironmentVariable();
 Partitioner._isDirectGroupContext = new Meteor.EnvironmentVariable();
 Partitioner._directOps = new Meteor.EnvironmentVariable();
+
+// Helper functions to abstract collection operations
+const GroupingHelpers = {
+  async findOne(userId) {
+    if (Partitioner.config.useMeteorUsers) {
+      return await Meteor.users.findOneAsync(userId, { fields: { groupId: 1 } });
+    } else {
+      return await Grouping.findOneAsync(userId);
+    }
+  },
+
+  async upsert(userId, updateDoc) {
+    if (Partitioner.config.useMeteorUsers) {
+      return await Meteor.users.upsertAsync(userId, updateDoc);
+    } else {
+      return await Grouping.upsertAsync(userId, updateDoc);
+    }
+  },
+
+  async remove(userId) {
+    if (Partitioner.config.useMeteorUsers) {
+      return await Meteor.users.updateAsync(userId, { $unset: { groupId: 1 } });
+    } else {
+      return await Grouping.removeAsync(userId);
+    }
+  },
+
+  observeChanges(callbacks) {
+    if (Partitioner.config.useMeteorUsers) {
+      return Meteor.users.find({ groupId: { $exists: true } }).observeChangesAsync(callbacks);
+    } else {
+      return Grouping.find().observeChangesAsync(callbacks);
+    }
+  }
+};
+
+// Configuration method
+Partitioner.configure = function(options) {
+  check(options, {
+    useMeteorUsers: Match.Optional(Boolean),
+    groupingCollectionName: Match.Optional(String),
+    disableUserManagementHooks: Match.Optional(Boolean)
+  });
+
+  if (options.useMeteorUsers !== undefined) {
+    Partitioner.config.useMeteorUsers = options.useMeteorUsers;
+  }
+  
+  if (options.groupingCollectionName !== undefined) {
+    Partitioner.config.groupingCollectionName = options.groupingCollectionName;
+  }
+
+  if (options.disableUserManagementHooks !== undefined) {
+    Partitioner.config.disableUserManagementHooks = options.disableUserManagementHooks;
+  }
+
+  // Validate configuration
+  if (Partitioner.config.useMeteorUsers && Partitioner.config.groupingCollectionName === "ts.grouping") {
+    Meteor._debug("Warning: Using Meteor.users for grouping but groupingCollectionName is still set to 'ts.grouping'");
+  }
+
+  if (Partitioner.config.disableUserManagementHooks && !Partitioner.config.useMeteorUsers) {
+    Meteor._debug("Warning: disableUserManagementHooks is true but useMeteorUsers is false. This setting only applies when using Meteor.users collection.");
+  }
+};
 
 /*
    Public API
@@ -20,11 +94,11 @@ Partitioner._directOps = new Meteor.EnvironmentVariable();
 Partitioner.setUserGroup = async function(userId, groupId) {
   check(userId, String);
   check(groupId, String);
-  if (await Grouping.findOneAsync(userId)) {
+  if (await GroupingHelpers.findOne(userId)) {
     throw new Meteor.Error(403, "User is already in a group");
   }
 
-  const result = await Grouping.upsertAsync(userId, {
+  const result = await GroupingHelpers.upsert(userId, {
     $set: {groupId: groupId}
   });
   
@@ -33,13 +107,13 @@ Partitioner.setUserGroup = async function(userId, groupId) {
 
 Partitioner.getUserGroup = async function(userId) {
   check(userId, String);
-  const grouping = await Grouping.findOneAsync(userId);
+  const grouping = await GroupingHelpers.findOne(userId);
   return grouping != null ? grouping.groupId : undefined;
 };
 
 Partitioner.clearUserGroup = async function(userId) {
   check(userId, String);
-  await Grouping.removeAsync(userId);
+  await GroupingHelpers.remove(userId);
 };
 
 Partitioner.group = async function() {
@@ -142,6 +216,14 @@ const userFindHook = function(userId, selector, options) {
   if (Partitioner._directOps.get() === true) return true;
   if (Helpers.isDirectUserSelector(selector)) return true;
 
+  // Skip user management operations when configured to do so
+  if (Partitioner.config.useMeteorUsers && Partitioner.config.disableUserManagementHooks) {
+    const userManagementOps = ['createUser', 'findUserByEmail', 'findUserByUsername', '_attemptLogin'];
+    if (userManagementOps.includes(this.name)) {
+      return true; // Skip hook for user management operations
+    }
+  }
+
   let groupId = Partitioner._currentGroup.get();
   let isDirectGroupContext = Partitioner._isDirectGroupContext.get();
   // This hook doesn't run if we're not in a method invocation or publish
@@ -230,7 +312,7 @@ const insertHook = async function(userId, doc) {
   let groupId = Partitioner._currentGroup.get();
   if (!groupId) {
     if (!userId) throw new Meteor.Error(403, ErrMsg.userIdErr);
-    const grouping = await Grouping.findOneAsync(userId);
+    const grouping = await GroupingHelpers.findOne(userId);
     groupId = grouping?.groupId;
     if (!groupId) {
       Helpers.throwVerboseError(this, ErrMsg.groupErr, 'insert');
@@ -242,28 +324,33 @@ const insertHook = async function(userId, doc) {
 };
 
 // Sync grouping needed for hooking Meteor.users
-Grouping.find().observeChangesAsync({
-  added: async function(id, fields) {
-    if (!await Meteor.users.updateAsync(id, {$set: {"group": fields.groupId}})) {
-      Meteor._debug(`Tried to set group for nonexistent user ${id}`);
+// Only sync when using separate grouping collection
+if (!Partitioner.config.useMeteorUsers) {
+  GroupingHelpers.observeChanges({
+    added: async function(id, fields) {
+      if (!await Meteor.users.updateAsync(id, {$set: {"group": fields.groupId}})) {
+        Meteor._debug(`Tried to set group for nonexistent user ${id}`);
+      }
+    },
+    changed: async function(id, fields) {
+      if (!await Meteor.users.updateAsync(id, {$set: {"group": fields.groupId}})) {
+        Meteor._debug(`Tried to change group for nonexistent user ${id}`);
+      }
+    },
+    removed: async function(id) {
+      if (!await Meteor.users.updateAsync(id, {$unset: {"group": null}})) {
+        Meteor._debug(`Tried to unset group for nonexistent user ${id}`);
+      }
     }
-  },
-  changed: async function(id, fields) {
-    if (!await Meteor.users.updateAsync(id, {$set: {"group": fields.groupId}})) {
-      Meteor._debug(`Tried to change group for nonexistent user ${id}`);
-    }
-  },
-  removed: async function(id) {
-    if (!await Meteor.users.updateAsync(id, {$unset: {"group": null}})) {
-      Meteor._debug(`Tried to unset group for nonexistent user ${id}`);
-    }
-  }
-});
+  });
+}
 
 TestFuncs = {
   getPartitionedIndex: getPartitionedIndex,
   userFindHook: userFindHook,
   findHook: findHook,
   insertHook: insertHook,
-  Grouping: Grouping
+  Grouping: Grouping,
+  GroupingHelpers: GroupingHelpers,
+  config: Partitioner.config
 }; 
