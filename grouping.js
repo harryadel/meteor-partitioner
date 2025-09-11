@@ -93,15 +93,6 @@ Partitioner.configure = function(options) {
       Partitioner.config.disableUserManagementHooks = options.disableUserManagementHooks;
     }
   }
-
-  // Validate final configuration
-  if (Partitioner.config.useMeteorUsers && Partitioner.config.groupingCollectionName === "ts.grouping") {
-    Meteor._debug("Note: Using Meteor.users for grouping. groupingCollectionName setting is ignored.");
-  }
-
-  if (Partitioner.config.disableUserManagementHooks && !Partitioner.config.useMeteorUsers) {
-    Meteor._debug("Note: disableUserManagementHooks automatically disabled when not using Meteor.users collection.");
-  }
 };
 
 /*
