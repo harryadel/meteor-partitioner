@@ -35,6 +35,8 @@ Partitioner.configure({
 });
 ```
 
+**Note:** The package automatically manages conflicting configurations. When you set `useMeteorUsers: true`, it automatically disables separate collection features. When you set `useMeteorUsers: false`, it automatically disables Meteor.users specific features.
+
 ### Configuration Options
 
 #### `useMeteorUsers` (Boolean, default: `false`)
@@ -99,20 +101,15 @@ Partitioner.configure({
 
 ### Configuration Validation
 
-The package includes built-in validation with helpful warnings:
+The package includes built-in validation with helpful debug messages:
 
 ```js
-// Warning: disableUserManagementHooks only applies when using Meteor.users
-Partitioner.configure({ 
-  useMeteorUsers: false,
-  disableUserManagementHooks: true  // Will show warning
-});
+// Debug messages show automatic configuration changes
+Partitioner.configure({ useMeteorUsers: true });
+// Output: "Configuration: Using Meteor.users collection for grouping. Separate grouping collection features disabled."
 
-// Warning: Using Meteor.users but groupingCollectionName still set
-Partitioner.configure({ 
-  useMeteorUsers: true,
-  groupingCollectionName: "ts.grouping"  // Will show warning
-});
+Partitioner.configure({ useMeteorUsers: false });
+// Output: "Configuration: Using separate grouping collection. Meteor.users specific features disabled."
 ```
 
 ## Compatibility

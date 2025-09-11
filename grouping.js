@@ -65,25 +65,42 @@ Partitioner.configure = function(options) {
     disableUserManagementHooks: Match.Optional(Boolean)
   });
 
-  if (options.useMeteorUsers !== undefined) {
-    Partitioner.config.useMeteorUsers = options.useMeteorUsers;
-  }
-  
-  if (options.groupingCollectionName !== undefined) {
-    Partitioner.config.groupingCollectionName = options.groupingCollectionName;
+  // Auto-disable conflicting configurations
+  if (options.useMeteorUsers === true) {
+    // When using Meteor.users, automatically disable separate collection features
+    Partitioner.config.useMeteorUsers = true;
+    Partitioner.config.disableUserManagementHooks = options.disableUserManagementHooks !== undefined ? 
+      options.disableUserManagementHooks : Partitioner.config.disableUserManagementHooks;
+    
+    Meteor._debug("Configuration: Using Meteor.users collection for grouping. Separate grouping collection features disabled.");
+  } else if (options.useMeteorUsers === false) {
+    // When using separate collection, automatically disable Meteor.users specific features
+    Partitioner.config.useMeteorUsers = false;
+    Partitioner.config.disableUserManagementHooks = false; // Force disable when not using Meteor.users
+    
+    if (options.groupingCollectionName !== undefined) {
+      Partitioner.config.groupingCollectionName = options.groupingCollectionName;
+    }
+    
+    Meteor._debug("Configuration: Using separate grouping collection. Meteor.users specific features disabled.");
+  } else {
+    // Only update individual settings if useMeteorUsers is not explicitly set
+    if (options.groupingCollectionName !== undefined) {
+      Partitioner.config.groupingCollectionName = options.groupingCollectionName;
+    }
+    
+    if (options.disableUserManagementHooks !== undefined) {
+      Partitioner.config.disableUserManagementHooks = options.disableUserManagementHooks;
+    }
   }
 
-  if (options.disableUserManagementHooks !== undefined) {
-    Partitioner.config.disableUserManagementHooks = options.disableUserManagementHooks;
-  }
-
-  // Validate configuration
+  // Validate final configuration
   if (Partitioner.config.useMeteorUsers && Partitioner.config.groupingCollectionName === "ts.grouping") {
-    Meteor._debug("Warning: Using Meteor.users for grouping but groupingCollectionName is still set to 'ts.grouping'");
+    Meteor._debug("Note: Using Meteor.users for grouping. groupingCollectionName setting is ignored.");
   }
 
   if (Partitioner.config.disableUserManagementHooks && !Partitioner.config.useMeteorUsers) {
-    Meteor._debug("Warning: disableUserManagementHooks is true but useMeteorUsers is false. This setting only applies when using Meteor.users collection.");
+    Meteor._debug("Note: disableUserManagementHooks automatically disabled when not using Meteor.users collection.");
   }
 };
 
