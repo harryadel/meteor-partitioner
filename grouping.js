@@ -152,7 +152,7 @@ const userFindHook = function(userId, selector, options) {
   if (!groupId) {
     // CANNOT do any async database calls here!
     // Must fail fast and require proper context setup
-    throw new Meteor.Error(403, ErrMsg.groupFindErr);
+    Helpers.throwVerboseError(this, ErrMsg.groupFindErr, 'find');
   }
 
   // Since user is in a group, scope the find to the group
@@ -198,7 +198,7 @@ const findHook = function(userId, selector, options) {
       if (!userId) throw new Meteor.Error(403, ErrMsg.userIdErr);
       // CANNOT do any async database calls here!
       // Must fail fast and require proper context setup
-      throw new Meteor.Error(403, ErrMsg.groupFindErr);
+      Helpers.throwVerboseError(this, ErrMsg.groupFindErr, 'find');
     }
 
     // if object (or empty) selector, just filter by group
@@ -232,7 +232,9 @@ const insertHook = async function(userId, doc) {
     if (!userId) throw new Meteor.Error(403, ErrMsg.userIdErr);
     const grouping = await Grouping.findOneAsync(userId);
     groupId = grouping?.groupId;
-    if (!groupId) throw new Meteor.Error(403, ErrMsg.groupErr);
+    if (!groupId) {
+      Helpers.throwVerboseError(this, ErrMsg.groupErr, 'insert');
+    }
   }
 
   doc._groupId = groupId;

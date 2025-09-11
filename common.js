@@ -17,5 +17,14 @@ Helpers = {
       typeof (selector != null ? selector._id : undefined) === 'string' ||
       typeof (selector != null ? selector.username : undefined) === 'string' ||
       (typeof (selector != null ? selector._id : undefined) === 'object' && (selector != null ? selector._id : undefined) !== null && (selector._id.$in != null));
+  },
+
+  // Helper function to log verbose error details and throw appropriate error
+  throwVerboseError: function(hookContext, errorMessage, defaultOperation = 'unknown') {
+    const operation = hookContext.name || defaultOperation;
+    const collection = hookContext.collection?.name || 'unknown collection';
+    const params = hookContext.args ? JSON.stringify(hookContext.args, null, 2) : 'no parameters';
+    Meteor._debug(`Collection: ${collection}, Operation: ${operation}, Parameters: ${params}`);
+    throw new Meteor.Error(403, errorMessage);
   }
 }; 
