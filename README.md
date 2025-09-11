@@ -21,6 +21,110 @@ Install with Meteor:
 meteor add mizzao:partitioner
 ```
 
+## Configuration
+
+The partitioner package supports flexible configuration options to adapt to different storage strategies and performance requirements.
+
+### Basic Configuration
+
+```js
+Partitioner.configure({
+  useMeteorUsers: false,                    // Use Meteor.users collection instead of separate grouping collection
+  groupingCollectionName: "ts.grouping",    // Custom name for grouping collection
+  disableUserManagementHooks: false        // Disable hooks on user management operations
+});
+```
+
+### Configuration Options
+
+#### `useMeteorUsers` (Boolean, default: `false`)
+
+When `true`, stores group data directly in the `Meteor.users` collection using a `groupId` field instead of a separate grouping collection.
+
+**Benefits:**
+- Simpler data model (no separate collection)
+- Better performance for user-group lookups
+- Reduced database complexity
+
+**Example:**
+```js
+Partitioner.configure({ useMeteorUsers: true });
+```
+
+#### `groupingCollectionName` (String, default: `"ts.grouping"`)
+
+Custom name for the grouping collection when not using `Meteor.users`. Useful for avoiding naming conflicts or organizing collections.
+
+**Example:**
+```js
+Partitioner.configure({ 
+  useMeteorUsers: false,
+  groupingCollectionName: "myapp.user_groups" 
+});
+```
+
+#### `disableUserManagementHooks` (Boolean, default: `false`)
+
+When `true` and `useMeteorUsers: true`, disables partitioning hooks on user management operations:
+- `createUser`
+- `findUserByEmail` 
+- `findUserByUsername`
+- `_attemptLogin`
+
+**Benefits:**
+- Improved performance for user management operations
+- Prevents unnecessary group scoping on user creation/login
+- Reduces overhead when using `Meteor.users` collection
+
+**Example:**
+```js
+Partitioner.configure({ 
+  useMeteorUsers: true,
+  disableUserManagementHooks: true 
+});
+```
+
+### Storage Strategies
+
+#### Separate Collection Strategy (Default)
+```js
+Partitioner.configure({ useMeteorUsers: false });
+```
+- Uses dedicated `ts.grouping` collection
+- Stores `{_id: userId, groupId: groupId}` documents
+- Syncs to `Meteor.users.group` field for hooks
+- Best for: Complex group management, multiple group types
+
+#### Meteor.users Collection Strategy
+```js
+Partitioner.configure({ 
+  useMeteorUsers: true,
+  disableUserManagementHooks: true 
+});
+```
+- Stores group data in `Meteor.users.groupId` field
+- No separate collection needed
+- Optimized user management operations
+- Best for: Simple group assignments, performance-critical applications
+
+### Configuration Validation
+
+The package includes built-in validation with helpful warnings:
+
+```js
+// Warning: disableUserManagementHooks only applies when using Meteor.users
+Partitioner.configure({ 
+  useMeteorUsers: false,
+  disableUserManagementHooks: true  // Will show warning
+});
+
+// Warning: Using Meteor.users but groupingCollectionName still set
+Partitioner.configure({ 
+  useMeteorUsers: true,
+  groupingCollectionName: "ts.grouping"  // Will show warning
+});
+```
+
 ## Compatibility
 
 - Meteor: 3.0+
@@ -84,6 +188,25 @@ Gets the group of the current user. Returns `undefined` if the user is not logge
 - Server: async (returns a Promise)
 
 ## Server API
+
+#### `Partitioner.configure(options)` (sync)
+
+Configures the partitioner package with the specified options. Should be called before any other partitioner operations.
+
+**Parameters:**
+- `options.useMeteorUsers` (Boolean, optional): Use Meteor.users collection instead of separate grouping collection
+- `options.groupingCollectionName` (String, optional): Custom name for grouping collection
+- `options.disableUserManagementHooks` (Boolean, optional): Disable hooks on user management operations
+
+**Example:**
+```js
+Meteor.startup(() => {
+  Partitioner.configure({
+    useMeteorUsers: true,
+    disableUserManagementHooks: true
+  });
+});
+```
 
 #### `Partitioner.setUserGroup(userId, groupId)` (async)
 
@@ -209,12 +332,32 @@ This looks simple enough, until you realize that you need to keep track of the `
 With this package, you can create a partition of the `ChatMessages` collection:
 
 ```js
+// Configure the partitioner (optional - defaults work fine)
+Meteor.startup(() => {
+  Partitioner.configure({
+    useMeteorUsers: false,  // Use separate grouping collection (default)
+    groupingCollectionName: "ts.grouping"
+  });
+});
+
 ChatMessages = new Mongo.Collection("messages");
 // Client
 Partitioner.partitionCollection(ChatMessages, {index: {timestamp: 1}});
 // Server
 Meteor.startup(async () => {
   await Partitioner.partitionCollection(ChatMessages, {index: {timestamp: 1}});
+});
+```
+
+**Alternative configuration using Meteor.users collection:**
+
+```js
+// Configure to use Meteor.users collection for better performance
+Meteor.startup(() => {
+  Partitioner.configure({
+    useMeteorUsers: true,
+    disableUserManagementHooks: true  // Optimize user management operations
+  });
 });
 ```
 
