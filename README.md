@@ -41,11 +41,6 @@ Partitioner.configure({
 
 When `true`, stores group data directly in the `Meteor.users` collection using a `groupId` field instead of a separate grouping collection.
 
-**Benefits:**
-- Simpler data model (no separate collection)
-- Better performance for user-group lookups
-- Reduced database complexity
-
 **Example:**
 ```js
 Partitioner.configure({ useMeteorUsers: true });
@@ -70,11 +65,6 @@ When `true` and `useMeteorUsers: true`, disables partitioning hooks on user mana
 - `findUserByEmail` 
 - `findUserByUsername`
 - `_attemptLogin`
-
-**Benefits:**
-- Improved performance for user management operations
-- Prevents unnecessary group scoping on user creation/login
-- Reduces overhead when using `Meteor.users` collection
 
 **Example:**
 ```js
