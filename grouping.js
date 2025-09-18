@@ -26,9 +26,11 @@ Partitioner._directOps = new Meteor.EnvironmentVariable();
 const GroupingHelpers = {
   async findOne(userId) {
     if (Partitioner.config.useMeteorUsers) {
-      return await Meteor.users.findOneAsync(userId, { fields: { groupId: 1 } });
-    } else {
-      return await Grouping.findOneAsync(userId);
+       const group = (await Meteor.users.findOneAsync(userId, { fields: { group: 1 } })).group;
+       return group;
+      } else {
+      const groupId = (await Grouping.findOneAsync(userId)).groupId;
+      return groupId;
     }
   },
 
@@ -42,7 +44,7 @@ const GroupingHelpers = {
 
   async remove(userId) {
     if (Partitioner.config.useMeteorUsers) {
-      return await Meteor.users.updateAsync(userId, { $unset: { groupId: 1 } });
+      return await Meteor.users.updateAsync(userId, { $unset: { group: 1 } });
     } else {
       return await Grouping.removeAsync(userId);
     }
@@ -115,8 +117,7 @@ Partitioner.setUserGroup = async function(userId, groupId) {
 
 Partitioner.getUserGroup = async function(userId) {
   check(userId, String);
-  const grouping = await GroupingHelpers.findOne(userId);
-  return grouping != null ? grouping.groupId : undefined;
+  return await GroupingHelpers.findOne(userId);
 };
 
 Partitioner.clearUserGroup = async function(userId) {
@@ -285,9 +286,11 @@ const findHook = function(userId, selector, options) {
 
   if (userId) {
     if (!groupId) {
+      // debugger;
       if (!userId) throw new Meteor.Error(403, ErrMsg.userIdErr);
       // CANNOT do any async database calls here!
       // Must fail fast and require proper context setup
+      // debugger;
       Helpers.throwVerboseError(this, ErrMsg.groupFindErr, 'find');
     }
 
@@ -320,9 +323,9 @@ const insertHook = async function(userId, doc) {
   let groupId = Partitioner._currentGroup.get();
   if (!groupId) {
     if (!userId) throw new Meteor.Error(403, ErrMsg.userIdErr);
-    const grouping = await GroupingHelpers.findOne(userId);
-    groupId = grouping?.groupId;
+    groupId = await GroupingHelpers.findOne(userId);
     if (!groupId) {
+      // debugger;
       Helpers.throwVerboseError(this, ErrMsg.groupErr, 'insert');
     }
   }
