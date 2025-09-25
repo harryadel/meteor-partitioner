@@ -9,6 +9,26 @@ Helpers = {
   isDirectSelector: function(selector) {
     return typeof selector === 'string' || typeof (selector != null ? selector._id : undefined) === 'string';
   },
+  // Helper function to detect login token verification queries
+  isLoginTokenQuery: function(selector) {
+    if (!selector || typeof selector !== 'object') return false;
+    
+    // Handle direct login token queries
+    if (selector['services.resume.loginTokens.hashedToken'] !== undefined ||
+        selector['services.resume.loginTokens.token'] !== undefined) {
+      return true;
+    }
+    
+    // Handle $or queries that contain login token conditions
+    if (selector.$or && Array.isArray(selector.$or)) {
+      return selector.$or.some(condition => 
+        condition['services.resume.loginTokens.hashedToken'] !== undefined ||
+        condition['services.resume.loginTokens.token'] !== undefined
+      );
+    }
+    
+    return false;
+  },
 
   // Because of https://github.com/HarvardEconCS/turkserver-meteor/issues/44
   // _id: { $in: [ ... ] } queries should be short-circuited as well for users
@@ -16,7 +36,9 @@ Helpers = {
     return typeof selector === 'string' ||
       typeof (selector != null ? selector._id : undefined) === 'string' ||
       typeof (selector != null ? selector.username : undefined) === 'string' ||
-      (typeof (selector != null ? selector._id : undefined) === 'object' && (selector != null ? selector._id : undefined) !== null && (selector._id.$in != null));
+      (typeof (selector != null ? selector._id : undefined) === 'object' && (selector != null ? selector._id : undefined) !== null && (selector._id.$in != null)) ||
+      // Handle login token verification during authentication
+      Helpers.isLoginTokenQuery(selector);
   },
 
   // Helper function to log verbose error details and throw appropriate error

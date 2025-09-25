@@ -6,12 +6,15 @@
 */
 
 Partitioner = {};
+// allowDirectIdSelectors is now managed through Partitioner.config
+const multipleGroupCollections = {}
 
 // Configuration options
 Partitioner.config = {
   useMeteorUsers: false, // Set to true to use Meteor.users instead of separate Grouping collection
   groupingCollectionName: "ts.grouping", // Name of the grouping collection when not using Meteor.users
-  disableUserManagementHooks: false // Set to true to disable hooks on user management operations when using Meteor.users
+  disableUserManagementHooks: false, // Set to true to disable hooks on user management operations when using Meteor.users
+  allowDirectIdSelectors: false, // Set to true to allow direct id selectors
 };
 
 // Initialize collections based on configuration
@@ -21,40 +24,41 @@ const Grouping = new Mongo.Collection(Partitioner.config.groupingCollectionName)
 Partitioner._currentGroup = new Meteor.EnvironmentVariable();
 Partitioner._isDirectGroupContext = new Meteor.EnvironmentVariable();
 Partitioner._directOps = new Meteor.EnvironmentVariable();
+Partitioner._searchAllUsers = new Meteor.EnvironmentVariable();
 
 // Helper functions to abstract collection operations
 const GroupingHelpers = {
   async findOne(userId) {
     if (Partitioner.config.useMeteorUsers) {
-       const group = (await Meteor.users.findOneAsync(userId, { fields: { group: 1 } })).group;
-       return group;
-      } else {
-      const groupId = (await Grouping.findOneAsync(userId)).groupId;
-      return groupId;
+      const user = await Meteor.users.direct.findOneAsync(userId, { fields: { group: 1 } });
+      return user?.group; // Safe null access
+    } else {
+      const grouping = await Grouping.direct.findOneAsync(userId);
+      return grouping?.groupId; // Safe null access
     }
   },
 
   async upsert(userId, updateDoc) {
     if (Partitioner.config.useMeteorUsers) {
-      return await Meteor.users.upsertAsync(userId, updateDoc);
+      return await Meteor.users.direct.upsertAsync(userId, updateDoc);
     } else {
-      return await Grouping.upsertAsync(userId, updateDoc);
+      return await Grouping.direct.upsertAsync(userId, updateDoc);
     }
   },
 
   async remove(userId) {
     if (Partitioner.config.useMeteorUsers) {
-      return await Meteor.users.updateAsync(userId, { $unset: { group: 1 } });
+      return await Meteor.users.direct.updateAsync(userId, { $unset: { group: 1 } });
     } else {
-      return await Grouping.removeAsync(userId);
+      return await Grouping.direct.removeAsync(userId);
     }
   },
 
   observeChanges(callbacks) {
     if (Partitioner.config.useMeteorUsers) {
-      return Meteor.users.find({ groupId: { $exists: true } }).observeChangesAsync(callbacks);
+      return Meteor.users.direct.find({ groupId: { $exists: true } }).observeChangesAsync(callbacks);
     } else {
-      return Grouping.find().observeChangesAsync(callbacks);
+      return Grouping.direct.find().observeChangesAsync(callbacks);
     }
   }
 };
@@ -64,7 +68,8 @@ Partitioner.configure = function(options) {
   check(options, {
     useMeteorUsers: Match.Optional(Boolean),
     groupingCollectionName: Match.Optional(String),
-    disableUserManagementHooks: Match.Optional(Boolean)
+    disableUserManagementHooks: Match.Optional(Boolean),
+    allowDirectIdSelectors: Match.Optional(Boolean)
   });
 
   // Auto-disable conflicting configurations
@@ -93,6 +98,10 @@ Partitioner.configure = function(options) {
     
     if (options.disableUserManagementHooks !== undefined) {
       Partitioner.config.disableUserManagementHooks = options.disableUserManagementHooks;
+    }
+
+    if (options.allowDirectIdSelectors !== undefined) {
+      Partitioner.config.allowDirectIdSelectors = options.allowDirectIdSelectors;
     }
   }
 };
@@ -166,7 +175,7 @@ Partitioner.directOperation = async function(func) {
 
 // This can be replaced - currently not documented
 Partitioner._isAdmin = async function(userId) {
-  const user = await Meteor.users.findOneAsync(userId, {fields: {groupId: 1, admin: 1}});
+  const user = await Meteor.users.direct.findOneAsync(userId, {fields: {groupId: 1, admin: 1}});
   return user.admin === true;
 };
 
@@ -176,7 +185,7 @@ const getPartitionedIndex = function(index) {
   return Object.assign(defaultIndex, index);
 };
 
-Partitioner.partitionCollection = async function(collection, options) {
+Partitioner.partitionCollection = async function(collection, options = {}) {
   // Because of the deny below, need to create an allow validator
   // on an insecure collection if there isn't one already
   if (collection._isInsecure()) {
@@ -198,21 +207,81 @@ Partitioner.partitionCollection = async function(collection, options) {
   collection.before.findOne(findHook);
 
   // These will hook the _validated methods as well
-  collection.before.insert(insertHook);
+  collection.before.insert((userId, doc) => insertHook(options.multipleGroups, userId, doc));
+  collection.before.upsert((userId, selector, modifier) => upsertHook(options.multipleGroups, userId, selector, modifier));
 
   /*
     No update/remove hook necessary, see
     https://github.com/matb33/meteor-collection-hooks/issues/23
   */
+ // store a hash of which collections allow multiple groups
+ if (options.multipleGroups) {
+  multipleGroupCollections[collection._name] = true;
+}
 
-  // Index the collections by groupId on the server for faster lookups across groups
-  collection.createIndex(getPartitionedIndex(options != null ? options.index : undefined), options != null ? options.indexOptions : undefined);
+// Index the collections by groupId on the server for faster lookups across groups
+return collection.createIndex ? collection.createIndex(getPartitionedIndex(options.index), options.indexOptions)
+  : collection._ensureIndex(getPartitionedIndex(options.index), options.indexOptions);
+};
+
+Partitioner.getAllowDirectIdSelectors = function() {
+  return Partitioner.config.allowDirectIdSelectors;
+};
+
+Partitioner.setAllowDirectIdSelectors = function(val) {
+  if (typeof val != 'boolean') {
+    throw new Error('Partitioner.allowDirectIdSelectors can only be boolean');
+  }
+  Partitioner.config.allowDirectIdSelectors = val;
+  if (val) {
+    console.warn('WARNING: setting Partitioner.allowDirectIdSelectors = true may allow unsafe operations!');
+  }
+};
+
+Partitioner.addToGroup = async function(collection, entityId, groupId) {
+  if (!multipleGroupCollections[collection._name]) {
+    throw new Meteor.Error(403, ErrMsg.multiGroupErr);
+  }
+
+  let currentGroupIds = collection.direct.findOne(entityId, {fields: {_groupId: 1}})?._groupId;
+  if (!currentGroupIds) {
+    currentGroupIds = [groupId];
+  } else if (typeof currentGroupIds == 'string') {
+    currentGroupIds = [currentGroupIds];
+  }
+
+  if (currentGroupIds.indexOf(groupId) == -1) {
+    currentGroupIds.push(groupId);
+    collection.direct.update(entityId, {$set: {_groupId: currentGroupIds}});
+  }
+  return currentGroupIds;
+};
+
+Partitioner.removeFromGroup = async function(collection, entityId, groupId) {
+  if (!multipleGroupCollections[collection._name]) {
+    throw new Meteor.Error(403, ErrMsg.multiGroupErr);
+  }
+
+  let currentGroupIds = collection.direct.findOne(entityId, {fields: {_groupId: 1}})?._groupId;
+  if (!currentGroupIds) {
+    return [];
+  }
+
+  if (typeof currentGroupIds == 'string') {
+    currentGroupIds = [currentGroupIds];
+  }
+  const index = currentGroupIds.indexOf(groupId);
+  if (index != -1) {
+    currentGroupIds.splice(index, 1);
+    collection.direct.update(entityId, {$set: {_groupId: currentGroupIds}});
+  }
+
+  return currentGroupIds;
 };
 
 // Publish admin and group for users that have it
 Meteor.publish(null, function() {
-  if (!this.userId) return;
-  return Meteor.users.find(this.userId, {
+  return Meteor.users.direct.find(this.userId, {
     fields: {
       admin: 1,
       group: 1
@@ -222,16 +291,11 @@ Meteor.publish(null, function() {
 
 // Special hook for Meteor.users to scope for each group
 const userFindHook = function(userId, selector, options) {
-  if (Partitioner._directOps.get() === true) return true;
-  if (Helpers.isDirectUserSelector(selector)) return true;
-
-  // Skip user management operations when configured to do so
-  if (Partitioner.config.useMeteorUsers && Partitioner.config.disableUserManagementHooks) {
-    const userManagementOps = ['createUser', 'findUserByEmail', 'findUserByUsername', '_attemptLogin'];
-    if (userManagementOps.includes(this.name)) {
-      return true; // Skip hook for user management operations
-    }
-  }
+  const isDirectSelector = Helpers.isDirectUserSelector(selector);
+if (
+  ((Partitioner.config.allowDirectIdSelectors || Partitioner._searchAllUsers.get()) && isDirectSelector)
+  || Partitioner._directOps.get() === true
+) return true;
 
   let groupId = Partitioner._currentGroup.get();
   let isDirectGroupContext = Partitioner._isDirectGroupContext.get();
@@ -240,43 +304,49 @@ const userFindHook = function(userId, selector, options) {
   if (!userId && !groupId) return true;
   if (!userId && !isDirectGroupContext) return true;
   
+  // Handle queries specifically looking for users without groups
+  if (!groupId && selector && selector.group === null) {
+    // Allow the query to proceed unchanged - it's specifically looking for ungrouped users
+    return true;
+  }
+  
   if (!groupId) {
+    // debugger;
     // CANNOT do any async database calls here!
     // Must fail fast and require proper context setup
     Helpers.throwVerboseError(this, ErrMsg.groupFindErr, 'find');
   }
-
+  // debugger;
   // Since user is in a group, scope the find to the group
-  const filter = {
-    "group": groupId,
-    "admin": {$exists: false}
-  };
-
-  if (!this.args[0]) {
-    this.args[0] = filter;
-  } else {
-    Object.assign(this.args[0], filter);
-  }
+  filter = {
+		"group": groupId,
+	};
+	if (!isDirectSelector) {
+		filter.admin = {$exists: false}
+	}
+	if (selector == null) {
+		this.args[0] = filter;
+	} else if (typeof selector == 'string') {
+		filter._id = selector;
+		this.args[0] = filter;
+	} else {
+		Object.assign(selector, filter);
+	}
 
   return true;
 };
 
-// Attach the find hooks to Meteor.users
-Meteor.users.before.find(userFindHook);
-Meteor.users.before.findOne(userFindHook);
-
 // No allow/deny for find so we make our own checks
 const findHook = function(userId, selector, options) {
   // Don't scope for direct operations
-  if (Partitioner._directOps.get() === true) return true;
-
   // for find(id) we should not touch this
   // TODO this may allow arbitrary finds across groups with the right _id
   // We could amend this in the future to {_id: someId, _groupId: groupId}
   // https://github.com/mizzao/meteor-partitioner/issues/9
   // https://github.com/mizzao/meteor-partitioner/issues/10
-  if (Helpers.isDirectSelector(selector)) return true;
+  if (Partitioner._directOps.get() === true || (Partitioner.config.allowDirectIdSelectors && Helpers.isDirectSelector(selector))) return true;
 
+  
   // Check for global hook
   let groupId = Partitioner._currentGroup.get();
 
@@ -293,30 +363,36 @@ const findHook = function(userId, selector, options) {
       // debugger;
       Helpers.throwVerboseError(this, ErrMsg.groupFindErr, 'find');
     }
-
-    // if object (or empty) selector, just filter by group
-    if (selector == null) {
-      this.args[0] = {_groupId: groupId};
-    } else {
-      selector._groupId = groupId;
-    }
-
-    // Adjust options to not return _groupId
-    if (options == null) {
-      this.args[1] = {fields: {_groupId: 0}};
-    } else {
-      // If options already exist, add {_groupId: 0} unless fields has {foo: 1} somewhere
-      if (options.fields == null) options.fields = {};
-      if (!Object.values(options.fields).some((v) => v === 1)) {
-        options.fields._groupId = 0;
+    // debugger;
+    
+     // force the selector to scope for the _groupId
+      if (selector == null) {
+        this.args[0] = {
+          _groupId: groupId,
+        };
+      } else if (typeof selector == 'string') {
+        this.args[0] = {
+          _id: selector,
+          _groupId: groupId,
+        };
+      } else {
+        selector._groupId = groupId;
       }
-    }
+
+      // Adjust options to not return _groupId
+      if (options == null) {
+        this.args[1] = {fields: {_groupId: 0}};
+      } else {
+        // If options already exist, add {_groupId: 0} unless fields has {foo: 1} somewhere
+        if (options.fields == null) options.fields = {};
+        if (!Object.values(options.fields).some(v => v)) options.fields._groupId = 0;
+      }
   }
 
   return true;
 };
 
-const insertHook = async function(userId, doc) {
+const insertHook = async function(multipleGroups, userId, doc) {
   // Don't add group for direct inserts
   if (Partitioner._directOps.get() === true) return true;
 
@@ -330,9 +406,81 @@ const insertHook = async function(userId, doc) {
     }
   }
 
-  doc._groupId = groupId;
+  // Handle multipleGroups: array vs string
+  doc._groupId = multipleGroups ? [groupId] : groupId;
   return true;
 };
+
+const upsertHook = async function(multipleGroups, userId, selector, modifier) {
+  // Don't add group for direct upserts
+  if (Partitioner._directOps.get() === true) return true;
+
+  let groupId = Partitioner._currentGroup.get();
+  if (!groupId) {
+    if (!userId) throw new Meteor.Error(403, ErrMsg.userIdErr);
+    groupId = await GroupingHelpers.findOne(userId);
+    if (!groupId) {
+      // debugger;
+      Helpers.throwVerboseError(this, ErrMsg.groupErr, 'upsert');
+    }
+  }
+
+  // Handle multipleGroups: array vs string
+  // For upserts, we need to add to $set
+  if (!modifier.$set) modifier.$set = {};
+  modifier.$set._groupId = multipleGroups ? [groupId] : groupId;
+  return true;
+};
+
+const userInsertHook = async function(userId, doc) {
+  // Don't add group for direct inserts
+  if (Partitioner._directOps.get() === true) return true;
+
+  let groupId = Partitioner._currentGroup.get();
+  if (!groupId) {
+    if (!userId) throw new Meteor.Error(403, ErrMsg.userIdErr);
+    groupId = await GroupingHelpers.findOne(userId);
+    if (!groupId) {
+      // debugger;
+      Helpers.throwVerboseError(this, ErrMsg.groupErr, 'insert');
+    }
+  }
+
+  // For users, we use 'group' field instead of '_groupId'
+  doc.group = groupId;
+  return true;
+};
+
+const userUpsertHook = async function(userId, selector, modifier) {
+  // Don't add group for direct upserts
+  if (Partitioner._directOps.get() === true) return true;
+
+  let groupId = Partitioner._currentGroup.get();
+  if (!groupId) {
+    if (!userId) throw new Meteor.Error(403, ErrMsg.userIdErr);
+    groupId = await GroupingHelpers.findOne(userId);
+    if (!groupId) {
+      // debugger;
+      Helpers.throwVerboseError(this, ErrMsg.groupErr, 'upsert');
+    }
+  }
+
+  // For users, we use 'group' field instead of '_groupId'
+  if (!modifier.$set) modifier.$set = {};
+  modifier.$set.group = groupId;
+  return true;
+};
+
+// Attach the find hooks to Meteor.users 
+Meteor.users.before.find(userFindHook);
+Meteor.users.before.findOne(userFindHook);
+
+// Insert/upsert hooks only needed when using Meteor.users to store group info
+if (Partitioner.config.useMeteorUsers) {
+  Meteor.users.before.insert(userInsertHook);
+  Meteor.users.before.upsert(userUpsertHook);
+}
+
 
 // Sync grouping needed for hooking Meteor.users
 // Only sync when using separate grouping collection
@@ -352,6 +500,23 @@ if (!Partitioner.config.useMeteorUsers) {
       if (!await Meteor.users.updateAsync(id, {$unset: {"group": null}})) {
         Meteor._debug(`Tried to unset group for nonexistent user ${id}`);
       }
+    }
+  });
+}
+
+// Accounts.createUser, etc, checks for case-insensitive matches of the email address
+// however, it uses Meteor.users.find which only operates on the partitioned collection
+// so will not find a matching user in a different group.
+// Hence make them use Meteor.users._partitionerDirect.find instead.
+// Don't wrap createUser with Partitioner.directOperation because want inserted user doc to be
+// automatically assigned to the group
+if (Partitioner.config.useMeteorUsers) {
+  ['createUser', 'findUserByEmail', 'findUserByUsername', '_attemptLogin'].forEach(fn => {
+    const orig = Accounts[fn];
+    if (orig) {
+      Accounts[fn] = function() {
+        return Partitioner._searchAllUsers.withValue(true, () => orig.apply(this, arguments));
+      };
     }
   });
 }
