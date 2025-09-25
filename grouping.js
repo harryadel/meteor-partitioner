@@ -40,7 +40,13 @@ const GroupingHelpers = {
 
   async upsert(userId, updateDoc) {
     if (Partitioner.config.useMeteorUsers) {
-      return await Meteor.users.direct.upsertAsync(userId, updateDoc);
+      // When using Meteor.users, we need to adapt the field name from 'groupId' to 'group'
+      const adaptedUpdateDoc = { ...updateDoc };
+      if (adaptedUpdateDoc.$set && adaptedUpdateDoc.$set.groupId !== undefined) {
+        adaptedUpdateDoc.$set.group = adaptedUpdateDoc.$set.groupId;
+        delete adaptedUpdateDoc.$set.groupId;
+      }
+      return await Meteor.users.direct.upsertAsync(userId, adaptedUpdateDoc);
     } else {
       return await Grouping.direct.upsertAsync(userId, updateDoc);
     }
@@ -51,14 +57,6 @@ const GroupingHelpers = {
       return await Meteor.users.direct.updateAsync(userId, { $unset: { group: 1 } });
     } else {
       return await Grouping.direct.removeAsync(userId);
-    }
-  },
-
-  observeChanges(callbacks) {
-    if (Partitioner.config.useMeteorUsers) {
-      return Meteor.users.direct.find({ groupId: { $exists: true } }).observeChangesAsync(callbacks);
-    } else {
-      return Grouping.direct.find().observeChangesAsync(callbacks);
     }
   }
 };
@@ -281,7 +279,7 @@ Partitioner.removeFromGroup = async function(collection, entityId, groupId) {
 
 // Publish admin and group for users that have it
 Meteor.publish(null, function() {
-  return Meteor.users.direct.find(this.userId, {
+  return Meteor.users.direct.find({ _id:this.userId }, {
     fields: {
       admin: 1,
       group: 1
@@ -311,12 +309,12 @@ if (
   }
   
   if (!groupId) {
-    // debugger;
+    debugger;
     // CANNOT do any async database calls here!
     // Must fail fast and require proper context setup
     Helpers.throwVerboseError(this, ErrMsg.groupFindErr, 'find');
   }
-  // debugger;
+  debugger;
   // Since user is in a group, scope the find to the group
   filter = {
 		"group": groupId,
@@ -356,14 +354,14 @@ const findHook = function(userId, selector, options) {
 
   if (userId) {
     if (!groupId) {
-      // debugger;
+      debugger;
       if (!userId) throw new Meteor.Error(403, ErrMsg.userIdErr);
       // CANNOT do any async database calls here!
       // Must fail fast and require proper context setup
-      // debugger;
+      debugger;
       Helpers.throwVerboseError(this, ErrMsg.groupFindErr, 'find');
     }
-    // debugger;
+    debugger;
     
      // force the selector to scope for the _groupId
       if (selector == null) {
@@ -401,7 +399,7 @@ const insertHook = async function(multipleGroups, userId, doc) {
     if (!userId) throw new Meteor.Error(403, ErrMsg.userIdErr);
     groupId = await GroupingHelpers.findOne(userId);
     if (!groupId) {
-      // debugger;
+      debugger;
       Helpers.throwVerboseError(this, ErrMsg.groupErr, 'insert');
     }
   }
@@ -420,7 +418,7 @@ const upsertHook = async function(multipleGroups, userId, selector, modifier) {
     if (!userId) throw new Meteor.Error(403, ErrMsg.userIdErr);
     groupId = await GroupingHelpers.findOne(userId);
     if (!groupId) {
-      // debugger;
+      debugger;
       Helpers.throwVerboseError(this, ErrMsg.groupErr, 'upsert');
     }
   }
@@ -441,7 +439,7 @@ const userInsertHook = async function(userId, doc) {
     if (!userId) throw new Meteor.Error(403, ErrMsg.userIdErr);
     groupId = await GroupingHelpers.findOne(userId);
     if (!groupId) {
-      // debugger;
+      debugger;
       Helpers.throwVerboseError(this, ErrMsg.groupErr, 'insert');
     }
   }
@@ -460,7 +458,7 @@ const userUpsertHook = async function(userId, selector, modifier) {
     if (!userId) throw new Meteor.Error(403, ErrMsg.userIdErr);
     groupId = await GroupingHelpers.findOne(userId);
     if (!groupId) {
-      // debugger;
+      debugger;
       Helpers.throwVerboseError(this, ErrMsg.groupErr, 'upsert');
     }
   }
@@ -485,7 +483,7 @@ if (Partitioner.config.useMeteorUsers) {
 // Sync grouping needed for hooking Meteor.users
 // Only sync when using separate grouping collection
 if (!Partitioner.config.useMeteorUsers) {
-  GroupingHelpers.observeChanges({
+  Grouping.direct.find().observeChangesAsync({
     added: async function(id, fields) {
       if (!await Meteor.users.updateAsync(id, {$set: {"group": fields.groupId}})) {
         Meteor._debug(`Tried to set group for nonexistent user ${id}`);
@@ -497,7 +495,7 @@ if (!Partitioner.config.useMeteorUsers) {
       }
     },
     removed: async function(id) {
-      if (!await Meteor.users.updateAsync(id, {$unset: {"group": null}})) {
+      if (!await Meteor.users.updateAsync(id, {$unset: {"group": 1}})) {
         Meteor._debug(`Tried to unset group for nonexistent user ${id}`);
       }
     }

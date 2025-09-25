@@ -2,7 +2,8 @@ ErrMsg = {
   userIdErr: "Must be logged in to operate on partitioned collection",
   groupErr: "Must have group assigned to operate on partitioned collection",
   groupFindErr: "User find operation attempted outside group context. " +
-    "All operations must be wrapped with Partitioner.bindUserGroup() or Partitioner.bindGroup(). "
+    "All operations must be wrapped with Partitioner.bindUserGroup() or Partitioner.bindGroup(). ",
+  multiGroupErr: "Operation attempted on collection that does not support multiple groups"
 };
 
 Helpers = {
