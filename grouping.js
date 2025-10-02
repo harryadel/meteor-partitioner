@@ -433,9 +433,8 @@ const upsertHook = async function(multipleGroups, userId, selector, modifier) {
   let groupId = Partitioner._currentGroup.get();
   if (!groupId) {
     if (!userId) throw new Meteor.Error(403, ErrMsg.userIdErr);
-    groupId = await GroupingHelpers.findOne(userId);
+    groupId = await GroupingHelpers.getGroupIdForUser(userId);
     if (!groupId) {
-      debugger;
       Helpers.throwVerboseError(this, ErrMsg.groupErr, 'upsert');
     }
   }
@@ -454,9 +453,8 @@ const userInsertHook = async function(userId, doc) {
   let groupId = Partitioner._currentGroup.get();
   if (!groupId) {
     if (!userId) throw new Meteor.Error(403, ErrMsg.userIdErr);
-    groupId = await GroupingHelpers.findOne(userId);
+    groupId = await GroupingHelpers.getGroupIdForUser(userId);
     if (!groupId) {
-      debugger;
       Helpers.throwVerboseError(this, ErrMsg.groupErr, 'insert');
     }
   }
@@ -473,9 +471,8 @@ const userUpsertHook = async function(userId, selector, modifier) {
   let groupId = Partitioner._currentGroup.get();
   if (!groupId) {
     if (!userId) throw new Meteor.Error(403, ErrMsg.userIdErr);
-    groupId = await GroupingHelpers.findOne(userId);
+    groupId = await GroupingHelpers.getGroupIdForUser(userId);
     if (!groupId) {
-      debugger;
       Helpers.throwVerboseError(this, ErrMsg.groupErr, 'upsert');
     }
   }
