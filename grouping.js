@@ -26,19 +26,36 @@ Partitioner._isDirectGroupContext = new Meteor.EnvironmentVariable();
 Partitioner._directOps = new Meteor.EnvironmentVariable();
 Partitioner._searchAllUsers = new Meteor.EnvironmentVariable();
 
-// Helper functions to abstract collection operations
+// Internal helper functions to abstract partitioner storage operations
+// Note: These are NOT MongoDB operations - they abstract whether we're using
+// Meteor.users.group field or a separate ts.grouping collection
 const GroupingHelpers = {
-  async findOne(userId) {
+  // Gets the group ID for a user from the appropriate storage location
+  async getGroupIdForUser(userId) {
     if (Partitioner.config.useMeteorUsers) {
-      const user = await Meteor.users.direct.findOneAsync(userId, { fields: { group: 1 } });
-      return user?.group; // Safe null access
+      const user = await Meteor.users.direct.findOneAsync(userId, { fields: { group: 1, _id: 1 } });
+      
+      if (!user) {
+        Meteor._debug(`[Partitioner] getGroupIdForUser: User ${userId} not found`);
+        return null;
+      }
+      if (!user.group) {
+        Meteor._debug(`[Partitioner] getGroupIdForUser: User ${userId} has no group field`);
+        return null;
+      }
+      return user.group;
     } else {
-      const grouping = await Grouping.direct.findOneAsync(userId);
-      return grouping?.groupId; // Safe null access
+      const groupingDoc = await Grouping.direct.findOneAsync(userId);
+      if (!groupingDoc) {
+        Meteor._debug(`[Partitioner] getGroupIdForUser: No grouping document for user ${userId}`);
+        return null;
+      }
+      return groupingDoc.groupId;
     }
   },
 
-  async upsert(userId, updateDoc) {
+  // Sets the group for a user in the appropriate storage location
+  async setUserGrouping(userId, updateDoc) {
     if (Partitioner.config.useMeteorUsers) {
       // When using Meteor.users, we need to adapt the field name from 'groupId' to 'group'
       const adaptedUpdateDoc = { ...updateDoc };
@@ -52,7 +69,8 @@ const GroupingHelpers = {
     }
   },
 
-  async remove(userId) {
+  // Removes the group assignment for a user
+  async removeUserGrouping(userId) {
     if (Partitioner.config.useMeteorUsers) {
       return await Meteor.users.direct.updateAsync(userId, { $unset: { group: 1 } });
     } else {
@@ -111,12 +129,14 @@ Partitioner.configure = function(options) {
 Partitioner.setUserGroup = async function(userId, groupId) {
   check(userId, String);
   check(groupId, String);
-  if (await GroupingHelpers.findOne(userId)) {
+  if (await GroupingHelpers.getGroupIdForUser(userId)) {
     throw new Meteor.Error(403, "User is already in a group");
   }
 
-  const result = await GroupingHelpers.upsert(userId, {
-    $set: {groupId: groupId}
+  // When using Meteor.users, set 'group' field; otherwise set 'groupId' in separate collection
+  const fieldName = Partitioner.config.useMeteorUsers ? 'group' : 'groupId';
+  const result = await GroupingHelpers.setUserGrouping(userId, {
+    $set: {[fieldName]: groupId}
   });
   
   return result;
@@ -124,12 +144,12 @@ Partitioner.setUserGroup = async function(userId, groupId) {
 
 Partitioner.getUserGroup = async function(userId) {
   check(userId, String);
-  return await GroupingHelpers.findOne(userId);
+  return await GroupingHelpers.getGroupIdForUser(userId);
 };
 
 Partitioner.clearUserGroup = async function(userId) {
   check(userId, String);
-  await GroupingHelpers.remove(userId);
+  await GroupingHelpers.removeUserGrouping(userId);
 };
 
 Partitioner.group = async function() {
@@ -157,10 +177,12 @@ Partitioner.bindGroup = async function(groupId, func) {
 
 Partitioner.bindUserGroup = async function(userId, func) {
   const groupId = await Partitioner.getUserGroup(userId);
+  
   if (!groupId) {
-    Meteor._debug(`Dropping operation because ${userId} is not in a group`);
+    Meteor._debug(`[Partitioner] bindUserGroup: Dropping operation because ${userId} is not in a group`);
     return;
   }
+  
   const result = await Partitioner._isDirectGroupContext.withValue(false, () => {
     return Partitioner._currentGroup.withValue(groupId, func);
   });
@@ -290,10 +312,10 @@ Meteor.publish(null, function() {
 // Special hook for Meteor.users to scope for each group
 const userFindHook = function(userId, selector, options) {
   const isDirectSelector = Helpers.isDirectUserSelector(selector);
-if (
-  ((Partitioner.config.allowDirectIdSelectors || Partitioner._searchAllUsers.get()) && isDirectSelector)
-  || Partitioner._directOps.get() === true
-) return true;
+  if (
+    ((Partitioner.config.allowDirectIdSelectors || Partitioner._searchAllUsers.get()) && isDirectSelector)
+    || Partitioner._directOps.get() === true
+  ) return true;
 
   let groupId = Partitioner._currentGroup.get();
   let isDirectGroupContext = Partitioner._isDirectGroupContext.get();
@@ -314,7 +336,6 @@ if (
     // Must fail fast and require proper context setup
     Helpers.throwVerboseError(this, ErrMsg.groupFindErr, 'find');
   }
-  debugger;
   // Since user is in a group, scope the find to the group
   filter = {
 		"group": groupId,
@@ -354,14 +375,11 @@ const findHook = function(userId, selector, options) {
 
   if (userId) {
     if (!groupId) {
-      debugger;
       if (!userId) throw new Meteor.Error(403, ErrMsg.userIdErr);
       // CANNOT do any async database calls here!
       // Must fail fast and require proper context setup
-      debugger;
       Helpers.throwVerboseError(this, ErrMsg.groupFindErr, 'find');
     }
-    debugger;
     
      // force the selector to scope for the _groupId
       if (selector == null) {
@@ -397,9 +415,8 @@ const insertHook = async function(multipleGroups, userId, doc) {
   let groupId = Partitioner._currentGroup.get();
   if (!groupId) {
     if (!userId) throw new Meteor.Error(403, ErrMsg.userIdErr);
-    groupId = await GroupingHelpers.findOne(userId);
+    groupId = await GroupingHelpers.getGroupIdForUser(userId);
     if (!groupId) {
-      debugger;
       Helpers.throwVerboseError(this, ErrMsg.groupErr, 'insert');
     }
   }
