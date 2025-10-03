@@ -10,6 +10,7 @@ Helpers = {
   isDirectSelector: function(selector) {
     return typeof selector === 'string' || typeof (selector != null ? selector._id : undefined) === 'string';
   },
+  
   // Helper function to detect login token verification queries
   isLoginTokenQuery: function(selector) {
     if (!selector || typeof selector !== 'object') return false;

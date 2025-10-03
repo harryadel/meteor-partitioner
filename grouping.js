@@ -143,6 +143,10 @@ Partitioner.setUserGroup = async function(userId, groupId) {
 };
 
 Partitioner.getUserGroup = async function(userId) {
+  // Handle null/undefined userId gracefully - return null instead of throwing
+  if (!userId) {
+    return null;
+  }
   check(userId, String);
   return await GroupingHelpers.getGroupIdForUser(userId);
 };
@@ -179,7 +183,7 @@ Partitioner.bindUserGroup = async function(userId, func) {
   const groupId = await Partitioner.getUserGroup(userId);
   
   if (!groupId) {
-    Meteor._debug(`[Partitioner] bindUserGroup: Dropping operation because ${userId} is not in a group`);
+    Meteor._debug(`[Partitioner] bindUserGroup: Dropping operation because user ${userId || '(null)'} is not in a group`);
     return;
   }
   
@@ -299,12 +303,13 @@ Partitioner.removeFromGroup = async function(collection, entityId, groupId) {
   return currentGroupIds;
 };
 
-// Publish admin and group for users that have it
+// Publish admin, group, and username for users that have it
 Meteor.publish(null, function() {
   return Meteor.users.direct.find({ _id:this.userId }, {
     fields: {
       admin: 1,
-      group: 1
+      group: 1,
+      username: 1
     }
   });
 });
@@ -312,13 +317,31 @@ Meteor.publish(null, function() {
 // Special hook for Meteor.users to scope for each group
 const userFindHook = function(userId, selector, options) {
   const isDirectSelector = Helpers.isDirectUserSelector(selector);
+  const searchAllUsers = Partitioner._searchAllUsers.get();
+  const directOps = Partitioner._directOps.get();
+  
+  // Allow direct selectors in these cases:
+  // 1. allowDirectIdSelectors config is true
+  // 2. _searchAllUsers context is set
+  // 3. _directOps context is set
+  // 4. No userId context (pre-authentication)
+  // 5. Has userId but no groupId yet (during authentication)
   if (
-    ((Partitioner.config.allowDirectIdSelectors || Partitioner._searchAllUsers.get()) && isDirectSelector)
-    || Partitioner._directOps.get() === true
-  ) return true;
+    ((Partitioner.config.allowDirectIdSelectors || searchAllUsers) && isDirectSelector)
+    || directOps === true
+    || (!userId && isDirectSelector)  // Pre-auth
+  ) {
+    return true;
+  }
 
   let groupId = Partitioner._currentGroup.get();
   let isDirectGroupContext = Partitioner._isDirectGroupContext.get();
+  
+  // NEW: Allow direct selectors during authentication (userId exists but no groupId)
+  if (userId && isDirectSelector && !groupId) {
+    return true;
+  }
+  
   // This hook doesn't run if we're not in a method invocation or publish
   // function, and Partitioner._currentGroup is not set
   if (!userId && !groupId) return true;
@@ -331,7 +354,6 @@ const userFindHook = function(userId, selector, options) {
   }
   
   if (!groupId) {
-    debugger;
     // CANNOT do any async database calls here!
     // Must fail fast and require proper context setup
     Helpers.throwVerboseError(this, ErrMsg.groupFindErr, 'find');
@@ -363,46 +385,49 @@ const findHook = function(userId, selector, options) {
   // We could amend this in the future to {_id: someId, _groupId: groupId}
   // https://github.com/mizzao/meteor-partitioner/issues/9
   // https://github.com/mizzao/meteor-partitioner/issues/10
-  if (Partitioner._directOps.get() === true || (Partitioner.config.allowDirectIdSelectors && Helpers.isDirectSelector(selector))) return true;
-
+  if (Partitioner._directOps.get() === true || 
+      (Partitioner.config.allowDirectIdSelectors && Helpers.isDirectSelector(selector))) 
+    return true;
   
   // Check for global hook
   let groupId = Partitioner._currentGroup.get();
-
+  
   if (!userId && !groupId) {
     throw new Meteor.Error(403, ErrMsg.userIdErr);
+  }
+  
+  // If direct selector and no groupId, allow it to pass through unchanged
+  if (Helpers.isDirectSelector(selector) && !groupId) {
+    return true;
   }
 
   if (userId) {
     if (!groupId) {
-      if (!userId) throw new Meteor.Error(403, ErrMsg.userIdErr);
-      // CANNOT do any async database calls here!
-      // Must fail fast and require proper context setup
+      // Non-direct selectors require context
       Helpers.throwVerboseError(this, ErrMsg.groupFindErr, 'find');
     }
     
-     // force the selector to scope for the _groupId
-      if (selector == null) {
-        this.args[0] = {
-          _groupId: groupId,
-        };
-      } else if (typeof selector == 'string') {
-        this.args[0] = {
-          _id: selector,
-          _groupId: groupId,
-        };
-      } else {
-        selector._groupId = groupId;
-      }
+    // force the selector to scope for the _groupId
+    if (selector == null) {
+      this.args[0] = {
+        _groupId: groupId,
+      };
+    } else if (typeof selector == 'string') {
+      this.args[0] = {
+        _id: selector,
+        _groupId: groupId,
+      };
+    } else {
+      selector._groupId = groupId;
+    }
 
-      // Adjust options to not return _groupId
-      if (options == null) {
-        this.args[1] = {fields: {_groupId: 0}};
-      } else {
-        // If options already exist, add {_groupId: 0} unless fields has {foo: 1} somewhere
-        if (options.fields == null) options.fields = {};
-        if (!Object.values(options.fields).some(v => v)) options.fields._groupId = 0;
-      }
+    // Adjust options to not return _groupId
+    if (options == null) {
+      this.args[1] = {fields: {_groupId: 0}};
+    } else {
+      if (options.fields == null) options.fields = {};
+      if (!Object.values(options.fields).some(v => v)) options.fields._groupId = 0;
+    }
   }
 
   return true;
@@ -523,7 +548,26 @@ if (!Partitioner.config.useMeteorUsers) {
 // Don't wrap createUser with Partitioner.directOperation because want inserted user doc to be
 // automatically assigned to the group
 if (Partitioner.config.useMeteorUsers) {
-  ['createUser', 'findUserByEmail', 'findUserByUsername', '_attemptLogin'].forEach(fn => {
+  // Wrap all authentication-related methods that query/modify users across partitions
+  [
+    'createUser',
+    'findUserByEmail', 
+    'findUserByUsername',
+    '_attemptLogin',
+    '_findUserByQuery',         // Used internally for login token verification
+    '_loginUser',               // Used during login process
+    'updateOrCreateUserFromExternalService', // OAuth logins
+    '_expireTokens',            // Token expiration during logout
+    'removeOtherTokens',        // Remove other tokens during logout
+    '_clearAllLoginTokens',     // Clear all tokens
+    '_setLoginToken',           // Set login token
+    '_insertLoginToken',        // Insert login token
+    '_getTokenLifetimeMs',      // Get token lifetime
+    '_tokenExpiration',         // Token expiration calculation
+    'setPassword',              // Password reset
+    '_checkPassword',           // Password verification
+    '_hashPassword',            // Password hashing
+  ].forEach(fn => {
     const orig = Accounts[fn];
     if (orig) {
       Accounts[fn] = function() {
@@ -537,7 +581,14 @@ TestFuncs = {
   getPartitionedIndex: getPartitionedIndex,
   userFindHook: userFindHook,
   findHook: findHook,
-  insertHook: insertHook,
+  // Export insertHook wrapper that matches how tests call it (userId, doc)
+  // and defaults multipleGroups to false for single-group collections
+  insertHook: async function(userId, doc) {
+    // Call with multipleGroups=false to match basic test expectations
+    return await insertHook.call(this, false, userId, doc);
+  },
+  // Export the raw insertHook for advanced testing if needed
+  insertHookRaw: insertHook,
   Grouping: Grouping,
   GroupingHelpers: GroupingHelpers,
   config: Partitioner.config
