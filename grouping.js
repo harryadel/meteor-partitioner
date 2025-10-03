@@ -326,11 +326,25 @@ const userFindHook = function(userId, selector, options) {
   // 3. _directOps context is set
   // 4. No userId context (pre-authentication)
   // 5. Has userId but no groupId yet (during authentication)
-  if (
-    ((Partitioner.config.allowDirectIdSelectors || searchAllUsers) && isDirectSelector)
-    || directOps === true
-    || (!userId && isDirectSelector)  // Pre-auth
-  ) {
+  if ((Partitioner.config.allowDirectIdSelectors || searchAllUsers) && isDirectSelector) {
+    let reason = Partitioner.config.allowDirectIdSelectors 
+      ? 'allowDirectIdSelectors config is enabled' 
+      : 'searchAllUsers context (authentication flow)';
+    Helpers.warnDirectSelectorBypass(this, selector, reason);
+    return true;
+  }
+  
+  if (directOps === true) {
+    // directOps bypasses ALL filtering, not just direct selectors
+    return true;
+  }
+  
+  if (!userId && isDirectSelector) {
+    Helpers.warnDirectSelectorBypass(
+      this, 
+      selector, 
+      'Pre-authentication - no userId context yet'
+    );
     return true;
   }
 
@@ -339,6 +353,11 @@ const userFindHook = function(userId, selector, options) {
   
   // NEW: Allow direct selectors during authentication (userId exists but no groupId)
   if (userId && isDirectSelector && !groupId) {
+    Helpers.warnDirectSelectorBypass(
+      this, 
+      selector, 
+      'User authentication flow - userId exists but no groupId context'
+    );
     return true;
   }
   
@@ -385,11 +404,21 @@ const findHook = function(userId, selector, options) {
   // We could amend this in the future to {_id: someId, _groupId: groupId}
   // https://github.com/mizzao/meteor-partitioner/issues/9
   // https://github.com/mizzao/meteor-partitioner/issues/10
-  if (Partitioner._directOps.get() === true || 
-      (Partitioner.config.allowDirectIdSelectors && Helpers.isDirectSelector(selector))) 
+  // directOps or allowDirectIdSelectors with direct selector - bypass with warning
+  if (Partitioner._directOps.get() === true) {
+    // directOps bypasses ALL filtering
     return true;
+  }
   
-  // Check for global hook
+  if (Partitioner.config.allowDirectIdSelectors && Helpers.isDirectSelector(selector)) {
+    Helpers.warnDirectSelectorBypass(
+      this, 
+      selector, 
+      'allowDirectIdSelectors config is enabled'
+    );
+    return true;
+  }
+  
   let groupId = Partitioner._currentGroup.get();
   
   if (!userId && !groupId) {
@@ -398,6 +427,11 @@ const findHook = function(userId, selector, options) {
   
   // If direct selector and no groupId, allow it to pass through unchanged
   if (Helpers.isDirectSelector(selector) && !groupId) {
+    Helpers.warnDirectSelectorBypass(
+      this, 
+      selector, 
+      'Direct ID selector without explicit partition context'
+    );
     return true;
   }
 

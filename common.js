@@ -43,6 +43,43 @@ Helpers = {
       Helpers.isLoginTokenQuery(selector);
   },
 
+  // Helper function to warn about direct selector bypassing partition filter
+  warnDirectSelectorBypass: function(hookContext, selector, reason) {
+    const collectionName = hookContext.rawCollection?.().collectionName || hookContext._name || 'unknown';
+    const operation = 'find';
+    
+    // Get stack trace to show where this is being called from
+    const stack = new Error().stack;
+    const stackLines = stack.split('\n');
+    
+    // Find the first meaningful line (skip internal frames)
+    let callerLine = 'unknown';
+    for (let i = 2; i < stackLines.length; i++) {
+      const line = stackLines[i];
+      // Skip internal/anonymous frames
+      if (line.includes('packages/') || 
+          line.includes('node_modules/') || 
+          line.includes('(<anonymous>)') ||
+          line.includes('Array.forEach')) {
+        continue;
+      }
+      callerLine = line.trim();
+      break;
+    }
+    
+    console.warn(
+      `[Partitioner Security Warning]\n` +
+      `  Collection: ${collectionName}\n` +
+      `  Operation: ${operation}\n` +
+      `  Selector: ${JSON.stringify(selector)}\n` +
+      `  Reason: ${reason}\n` +
+      `  Called from: ${callerLine}\n` +
+      `  Issue: Direct selector query bypassing partition filter.\n` +
+      `  Risk: May allow cross-partition access.\n` +
+      `  Fix: Wrap with Partitioner.bindUserGroup() or Partitioner.bindGroup().`
+    );
+  },
+
   // Helper function to log verbose error details and throw appropriate error
   throwVerboseError: function(hookContext, errorMessage, defaultOperation = 'unknown') {
     const operation = hookContext.name || defaultOperation;
