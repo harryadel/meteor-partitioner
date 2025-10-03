@@ -87,5 +87,35 @@ Helpers = {
     const params = hookContext.args ? JSON.stringify(hookContext.args, null, 2) : 'no parameters';
     Meteor._debug(`Collection: ${collection}, Operation: ${operation}, Parameters: ${params}`);
     throw new Meteor.Error(403, errorMessage);
+  },
+
+  // Helper function to log informational messages with stack trace
+  logWithStackTrace: function(message, data) {
+    // Get stack trace to show where this is being called from
+    const stack = new Error().stack;
+    const stackLines = stack.split('\n');
+    
+    // Find the first meaningful line (skip internal frames)
+    let callerLine = 'unknown';
+    for (let i = 2; i < stackLines.length; i++) {
+      const line = stackLines[i];
+      // Skip internal/anonymous frames
+      if (line.includes('packages/') || 
+          line.includes('node_modules/') || 
+          line.includes('(<anonymous>)') ||
+          line.includes('Array.forEach')) {
+        continue;
+      }
+      callerLine = line.trim();
+      break;
+    }
+    
+    let output = `[Partitioner Info] ${message}\n`;
+    if (data) {
+      output += `  Data: ${JSON.stringify(data)}\n`;
+    }
+    output += `  Called from: ${callerLine}`;
+    
+    Meteor._debug(output);
   }
 }; 

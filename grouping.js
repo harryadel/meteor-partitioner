@@ -183,7 +183,10 @@ Partitioner.bindUserGroup = async function(userId, func) {
   const groupId = await Partitioner.getUserGroup(userId);
   
   if (!groupId) {
-    Meteor._debug(`[Partitioner] bindUserGroup: Dropping operation because user ${userId || '(null)'} is not in a group`);
+    Helpers.logWithStackTrace(
+      'bindUserGroup: Dropping operation because user is not in a group',
+      { userId: userId || '(null)' }
+    );
     return;
   }
   
@@ -559,17 +562,26 @@ if (!Partitioner.config.useMeteorUsers) {
   Grouping.direct.find().observeChangesAsync({
     added: async function(id, fields) {
       if (!await Meteor.users.updateAsync(id, {$set: {"group": fields.groupId}})) {
-        Meteor._debug(`Tried to set group for nonexistent user ${id}`);
+        Helpers.logWithStackTrace(
+          'Tried to set group for nonexistent user',
+          { userId: id, groupId: fields.groupId }
+        );
       }
     },
     changed: async function(id, fields) {
       if (!await Meteor.users.updateAsync(id, {$set: {"group": fields.groupId}})) {
-        Meteor._debug(`Tried to change group for nonexistent user ${id}`);
+        Helpers.logWithStackTrace(
+          'Tried to change group for nonexistent user',
+          { userId: id, groupId: fields.groupId }
+        );
       }
     },
     removed: async function(id) {
       if (!await Meteor.users.updateAsync(id, {$unset: {"group": 1}})) {
-        Meteor._debug(`Tried to unset group for nonexistent user ${id}`);
+        Helpers.logWithStackTrace(
+          'Tried to unset group for nonexistent user',
+          { userId: id }
+        );
       }
     }
   });
