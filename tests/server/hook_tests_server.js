@@ -36,7 +36,7 @@ const testGroupId = "test_group_server";
     test.equal(ctx.args[0]._groupId, testGroupId);
 
     test.isTrue(ctx.args[1] != null);
-    test.equal(ctx.args[1].fields._groupId, 0);
+    test.equal(ctx.args[1].projection._groupId, 0);
   });
 
   Tinytest.addAsync("partitioner - hooks - find with no group", async (test) => {
@@ -93,7 +93,7 @@ const testGroupId = "test_group_server";
     test.equal(ctx.args[0]._groupId, testGroupId);
 
     test.isTrue(ctx.args[1] != null);
-    test.equal(ctx.args[1].fields._groupId, 0);
+    test.equal(ctx.args[1].projection._groupId, 0);
   });
 
   Tinytest.addAsync("partitioner - hooks - find with selector", async (test) => {
@@ -110,14 +110,14 @@ const testGroupId = "test_group_server";
     test.equal(ctx.args[0]._groupId, testGroupId);
 
     test.isTrue(ctx.args[1] != null);
-    test.equal(ctx.args[1].fields._groupId, 0);
+    test.equal(ctx.args[1].projection._groupId, 0);
   });
 
   Tinytest.addAsync("partitioner - hooks - find with inclusion fields", async (test) => {
     const ctx = {
       args: [
         {foo: "bar"},
-        {fields: {foo: 1}}
+        {projection: {foo: 1}}
       ]
     };
 
@@ -131,15 +131,15 @@ const testGroupId = "test_group_server";
     test.equal(ctx.args[0]._groupId, testGroupId);
 
     test.isTrue(ctx.args[1] != null);
-    test.equal(ctx.args[1].fields.foo, 1);
-    test.isFalse(ctx.args[1].fields._groupId != null);
+    test.equal(ctx.args[1].projection.foo, 1);
+    test.isFalse(ctx.args[1].projection._groupId != null);
   });
 
   Tinytest.addAsync("partitioner - hooks - find with exclusion fields", async (test) => {
     const ctx = {
       args: [
         {foo: "bar"},
-        {fields: {foo: 0}}
+        {projection: {foo: 0}}
       ]
     };
 
@@ -153,8 +153,8 @@ const testGroupId = "test_group_server";
     test.equal(ctx.args[0]._groupId, testGroupId);
 
     test.isTrue(ctx.args[1] != null);
-    test.equal(ctx.args[1].fields.foo, 0);
-    test.equal(ctx.args[1].fields._groupId, 0);
+    test.equal(ctx.args[1].projection.foo, 0);
+    test.equal(ctx.args[1].projection._groupId, 0);
   });
 
   Tinytest.addAsync("partitioner - hooks - insert doc", async (test) => {
