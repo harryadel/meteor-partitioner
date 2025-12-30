@@ -33,7 +33,7 @@ const GroupingHelpers = {
   // Gets the group ID for a user from the appropriate storage location
   async getGroupIdForUser(userId) {
     if (Partitioner.config.useMeteorUsers) {
-      const user = await Meteor.users.direct.findOneAsync(userId, { fields: { group: 1, _id: 1 } });
+      const user = await Meteor.users.direct.findOneAsync(userId, { projection: { group: 1, _id: 1 } });
       
       if (!user) {
         Meteor._debug(`[Partitioner] getGroupIdForUser: User ${userId} not found`);
@@ -202,7 +202,7 @@ Partitioner.directOperation = async function(func) {
 
 // This can be replaced - currently not documented
 Partitioner._isAdmin = async function(userId) {
-  const user = await Meteor.users.direct.findOneAsync(userId, {fields: {groupId: 1, admin: 1}});
+  const user = await Meteor.users.direct.findOneAsync(userId, {projection: {groupId: 1, admin: 1}});
   return user.admin === true;
 };
 
@@ -270,7 +270,7 @@ Partitioner.addToGroup = async function(collection, entityId, groupId) {
     throw new Meteor.Error(403, ErrMsg.multiGroupErr);
   }
 
-  let currentGroupIds = collection.direct.findOne(entityId, {fields: {_groupId: 1}})?._groupId;
+  let currentGroupIds = collection.direct.findOne(entityId, {projection: {_groupId: 1}})?._groupId;
   if (!currentGroupIds) {
     currentGroupIds = [groupId];
   } else if (typeof currentGroupIds == 'string') {
@@ -289,7 +289,7 @@ Partitioner.removeFromGroup = async function(collection, entityId, groupId) {
     throw new Meteor.Error(403, ErrMsg.multiGroupErr);
   }
 
-  let currentGroupIds = collection.direct.findOne(entityId, {fields: {_groupId: 1}})?._groupId;
+  let currentGroupIds = collection.direct.findOne(entityId, {projection: {_groupId: 1}})?._groupId;
   if (!currentGroupIds) {
     return [];
   }
@@ -309,7 +309,7 @@ Partitioner.removeFromGroup = async function(collection, entityId, groupId) {
 // Publish admin, group, and username for users that have it
 Meteor.publish(null, function() {
   return Meteor.users.direct.find({ _id:this.userId }, {
-    fields: {
+    projection: {
       admin: 1,
       group: 1,
       username: 1
@@ -460,10 +460,10 @@ const findHook = function(userId, selector, options) {
 
     // Adjust options to not return _groupId
     if (options == null) {
-      this.args[1] = {fields: {_groupId: 0}};
+      this.args[1] = {projection: {_groupId: 0}};
     } else {
-      if (options.fields == null) options.fields = {};
-      if (!Object.values(options.fields).some(v => v)) options.fields._groupId = 0;
+      if (options.projection == null) options.projection = {};
+      if (!Object.values(options.projection).some(v => v)) options.projection._groupId = 0;
     }
   }
 
