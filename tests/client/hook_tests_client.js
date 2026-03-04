@@ -3,17 +3,19 @@ import { createTestUser } from "../utils.js";
 
 const testGroupId = "test_group_client";
 
+// In collection-hooks v2, before.find hooks receive (userId, selector, options)
+// as direct parameters. Hooks mutate selector in place — no this.args.
 
 // XXX All async here to ensure ordering
 Tinytest.addAsync("partitioner - hooks - add client group", async (test) => {
   const userId = await createTestUser();
   const originalUserId = Meteor.userId;
   Meteor.userId = () => userId;
-  
+
   try {
     await Meteor.callAsync("joinGroup", testGroupId);
   } catch (e) {
-    test.fail("This should not throw an error"); 
+    test.fail("This should not throw an error");
   } finally {
     Meteor.userId = originalUserId;
   }
@@ -21,49 +23,22 @@ Tinytest.addAsync("partitioner - hooks - add client group", async (test) => {
 });
 
 Tinytest.addAsync("partitioner - hooks - vanilla client find", async (test) => {
-  const ctx = {
-    args: []
-  };
+  // In v2, _getFindSelector returns {} for no-args find, so selector is always an object
+  const selector = {};
 
   const userId = await createTestUser();
 
-  TestFuncs.userFindHook.call(ctx, undefined, ctx.args[0], ctx.args[1]);
-  // Should have nothing changed
-  test.length(ctx.args, 0);
+  TestFuncs.userFindHook.call({}, undefined, selector, undefined);
+  // Should have nothing changed (no userId)
+  test.isFalse(!!selector.admin);
 
-  TestFuncs.userFindHook.call(ctx, userId, ctx.args[0], ctx.args[1]);
-  // Also nothing changed
-  test.length(ctx.args, 0);
+  const selector2 = {};
+  TestFuncs.userFindHook.call({}, userId, selector2, undefined);
+  // Non-admin user — nothing changed
+  test.isFalse(!!selector2.admin);
 });
 
 Tinytest.addAsync("partitioner - hooks - admin added in client find", async (test) => {
-  const ctx = {
-    args: []
-  };
-
-  const originalUserId = Meteor.userId;
-  Meteor.userId = () => "fakeUserId";
-
-  const originalUser = Meteor.user;
-  Meteor.user = () => ({admin: true});
-
-  TestFuncs.userFindHook.call(ctx, undefined, ctx.args[0], ctx.args[1]);
-  // Should have nothing changed
-  test.length(ctx.args, 0);
-
-  TestFuncs.userFindHook.call(ctx, Meteor.userId(), ctx.args[0], ctx.args[1]);
-  // Admin removed from find
-  test.equal(ctx.args[0].admin.$exists, false);
-
-  Meteor.user = originalUser;
-  Meteor.userId = originalUserId;
-});
-
-Tinytest.addAsync("partitioner - hooks - admin hidden in client find", async (test) => {
-  const ctx = {
-    args: []
-  };
-
   const originalUserId = Meteor.userId;
   Meteor.userId = () => "fakeUserId";
 
@@ -71,13 +46,36 @@ Tinytest.addAsync("partitioner - hooks - admin hidden in client find", async (te
   Meteor.user = () => ({admin: true});
 
   try {
-    TestFuncs.userFindHook.call(ctx, undefined, ctx.args[0], ctx.args[1]);
-    // Should have nothing changed
-    test.length(ctx.args, 0);
+    // No userId — nothing changed
+    const selector1 = {};
+    TestFuncs.userFindHook.call({}, undefined, selector1, undefined);
+    test.isFalse(!!selector1.admin);
 
-    TestFuncs.userFindHook.call(ctx, Meteor.userId(), ctx.args[0], ctx.args[1]);
-    // Admin removed from find
-    test.equal(ctx.args[0].admin.$exists, false);
+    // With userId (admin user) — should add admin filter
+    const selector2 = {};
+    TestFuncs.userFindHook.call({}, Meteor.userId(), selector2, undefined);
+    test.equal(selector2.admin.$exists, false);
+  } finally {
+    Meteor.user = originalUser;
+    Meteor.userId = originalUserId;
+  }
+});
+
+Tinytest.addAsync("partitioner - hooks - admin hidden in client find", async (test) => {
+  const originalUserId = Meteor.userId;
+  Meteor.userId = () => "fakeUserId";
+
+  const originalUser = Meteor.user;
+  Meteor.user = () => ({admin: true});
+
+  try {
+    const selector1 = {};
+    TestFuncs.userFindHook.call({}, undefined, selector1, undefined);
+    test.isFalse(!!selector1.admin);
+
+    const selector2 = {};
+    TestFuncs.userFindHook.call({}, Meteor.userId(), selector2, undefined);
+    test.equal(selector2.admin.$exists, false);
   } finally {
     Meteor.user = originalUser;
     Meteor.userId = originalUserId;
@@ -85,17 +83,14 @@ Tinytest.addAsync("partitioner - hooks - admin hidden in client find", async (te
 });
 
 Tinytest.addAsync("partitioner - hooks - admin hidden in selector find", async (test) => {
-  const ctx = {
-    args: [{foo: "bar"}]
-  };
-
   const originalUserId = Meteor.userId;
   Meteor.userId = () => "fakeUserId";
 
-  TestFuncs.userFindHook.call(ctx, undefined, ctx.args[0], ctx.args[1]);
-  // Should have nothing changed
-  test.length(ctx.args, 1);
-  test.equal(ctx.args[0].foo, "bar");
+  // No userId — nothing changed
+  const selector1 = {foo: "bar"};
+  TestFuncs.userFindHook.call({}, undefined, selector1, undefined);
+  test.equal(selector1.foo, "bar");
+  test.isFalse(!!selector1.admin);
 
   const originalUser = Meteor.user;
   const originalIsDirect = Helpers.isDirectUserSelector;
@@ -103,10 +98,11 @@ Tinytest.addAsync("partitioner - hooks - admin hidden in selector find", async (
   Helpers.isDirectUserSelector = () => false;
 
   try {
-    TestFuncs.userFindHook.call(ctx, Meteor.userId(), ctx.args[0], ctx.args[1]);
-    // Admin removed from find
-    test.equal(ctx.args[0].foo, "bar");
-    test.equal(ctx.args[0].admin.$exists, false);
+    // With admin userId — should add admin filter to existing selector
+    const selector2 = {foo: "bar"};
+    TestFuncs.userFindHook.call({}, Meteor.userId(), selector2, undefined);
+    test.equal(selector2.foo, "bar");
+    test.equal(selector2.admin.$exists, false);
   } finally {
     Meteor.user = originalUser;
     Helpers.isDirectUserSelector = originalIsDirect;

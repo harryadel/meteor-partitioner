@@ -19,12 +19,10 @@ const userFindHook = function(userId, selector, options) {
   const user = Meteor.user();
   if (!(user != null ? user.admin : undefined)) return true;
 
-  // Don't have admin see itself for global finds
-  if (!this.args[0]) {
-    this.args[0] = {
-      admin: {$exists: false}
-    };
-  } else {
+  // Don't have admin see itself for global finds.
+  // collection-hooks v2 passes selector as a parameter (not via this.args).
+  // normalizeSelector + _getFindSelector ensure selector is always an object.
+  if (selector != null && typeof selector === 'object') {
     selector.admin = {$exists: false};
   }
   return true;
