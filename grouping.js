@@ -270,7 +270,8 @@ Partitioner.addToGroup = async function(collection, entityId, groupId) {
     throw new Meteor.Error(403, ErrMsg.multiGroupErr);
   }
 
-  let currentGroupIds = collection.direct.findOne(entityId, {projection: {_groupId: 1}})?._groupId;
+  const doc = await collection.direct.findOneAsync(entityId, {projection: {_groupId: 1}});
+  let currentGroupIds = doc?._groupId;
   if (!currentGroupIds) {
     currentGroupIds = [groupId];
   } else if (typeof currentGroupIds == 'string') {
@@ -279,7 +280,7 @@ Partitioner.addToGroup = async function(collection, entityId, groupId) {
 
   if (currentGroupIds.indexOf(groupId) == -1) {
     currentGroupIds.push(groupId);
-    collection.direct.update(entityId, {$set: {_groupId: currentGroupIds}});
+    await collection.direct.updateAsync(entityId, {$set: {_groupId: currentGroupIds}});
   }
   return currentGroupIds;
 };
@@ -289,7 +290,8 @@ Partitioner.removeFromGroup = async function(collection, entityId, groupId) {
     throw new Meteor.Error(403, ErrMsg.multiGroupErr);
   }
 
-  let currentGroupIds = collection.direct.findOne(entityId, {projection: {_groupId: 1}})?._groupId;
+  const doc = await collection.direct.findOneAsync(entityId, {projection: {_groupId: 1}});
+  let currentGroupIds = doc?._groupId;
   if (!currentGroupIds) {
     return [];
   }
@@ -300,7 +302,7 @@ Partitioner.removeFromGroup = async function(collection, entityId, groupId) {
   const index = currentGroupIds.indexOf(groupId);
   if (index != -1) {
     currentGroupIds.splice(index, 1);
-    collection.direct.update(entityId, {$set: {_groupId: currentGroupIds}});
+    await collection.direct.updateAsync(entityId, {$set: {_groupId: currentGroupIds}});
   }
 
   return currentGroupIds;
